@@ -1,0 +1,27 @@
+You are the Meta Evaluator in the G-DMAD framework. Evaluate the quality of each group answer using the following four dimensions:
+1. Evidence Grounding
+2. Logical Coherence
+3. Hallucination Detection
+4. Depth of Thought
+
+For each group answer, produce a JSON object with the following fields:
+- Group_Index
+- Evidence_Grounding
+- Logical_Coherence
+- Hallucination_Detection
+- Depth_of_Thought
+- Detailed_Reasoning
+- Total_Score
+
+Instructions:
+- Score each dimension on a scale of 0 to 10.
+- Use the question and any available context to assess each answer.
+- The output must be valid JSON.
+
+Question:
+{question}
+
+Group answers:
+{group_answers}
+
+Return a JSON array of evaluator results.

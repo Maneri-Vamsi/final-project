@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-DMAD Research Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <div class="ambient ambient-one"></div>
+        <div class="ambient ambient-two"></div>
+        <div class="ambient-grid"></div>
+
+        <header class="hero-card">
+            <div class="hero-copy">
+                <p class="hero-kicker">Final Year Project · AI Research Runtime</p>
+                <h1>G-DMAD</h1>
+                <p class="hero-subtitle">Group-Based Diverse Multi-Agent Debate for Robust Reasoning</p>
+                <div class="hero-status-row">
+                    <span class="hero-pill hero-pill-accent">Multi-Agent Research Console</span>
+                    <span class="hero-pill" id="run-state">Idle</span>
+                </div>
+            </div>
+
+            <div class="hero-orbit">
+                <div class="orbit-core">
+                    <span class="orbit-label">Debate Runtime</span>
+                    <strong id="current-stage">Waiting</strong>
+                </div>
+                <div class="orbit-ring orbit-ring-a"></div>
+                <div class="orbit-ring orbit-ring-b"></div>
+                <div class="orbit-node orbit-node-a"></div>
+                <div class="orbit-node orbit-node-b"></div>
+                <div class="orbit-node orbit-node-c"></div>
+            </div>
+        </header>
+
+        <section class="top-ribbon">
+            <article class="ribbon-card">
+                <span>Execution Time</span>
+                <strong id="stat-time">0.0s</strong>
+            </article>
+            <article class="ribbon-card">
+                <span>Completed Agents</span>
+                <strong id="stat-agents">0</strong>
+            </article>
+            <article class="ribbon-card">
+                <span>Groups</span>
+                <strong id="stat-groups">0</strong>
+            </article>
+            <article class="ribbon-card">
+                <span>Evaluation Progress</span>
+                <strong id="stat-evaluations">0</strong>
+            </article>
+            <article class="ribbon-card">
+                <span>Rounds</span>
+                <strong id="stat-rounds">0</strong>
+            </article>
+            <article class="ribbon-card">
+                <span>Current Stage</span>
+                <strong id="stat-stage">Idle</strong>
+            </article>
+        </section>
+
+        <main class="workspace-grid">
+            <section class="workspace-card command-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Input Console</p>
+                        <h2>Question Workspace</h2>
+                    </div>
+                </div>
+
+                <label class="sr-only" for="question-input">Reasoning Question</label>
+                <textarea id="question-input" placeholder="Enter your reasoning question..."></textarea>
+
+                <div class="command-actions">
+                    <button id="run-btn" class="primary-action" type="button">Run Debate</button>
+                    <button id="clear-btn" class="secondary-action" type="button">Clear</button>
+                    <div class="processing-indicator" id="spinner-wrap" hidden>
+                        <span class="spinner"></span>
+                        <span>Debate in progress</span>
+                    </div>
+                </div>
+
+                <div class="question-footnote">
+                    Submit a reasoning question to watch the full G-DMAD pipeline unfold from agent-level thinking to leader conclusion.
+                </div>
+            </section>
+
+            <section class="workspace-card mission-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Live Runtime</p>
+                        <h2>Execution Theater</h2>
+                    </div>
+                    <span class="stage-badge" id="progress-value">0%</span>
+                </div>
+
+                <div class="progress-panel">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="status-banner" id="status-line">Initializing...</div>
+                </div>
+
+                <div class="insight-grid">
+                    <article class="insight-card">
+                        <span class="insight-label">Active Process</span>
+                        <strong id="active-process">Waiting for a question</strong>
+                        <p id="active-process-detail">The dashboard will show which agent or stage is currently working.</p>
+                    </article>
+                    <article class="insight-card">
+                        <span class="insight-label">Latest Decision</span>
+                        <strong id="latest-decision">No decision yet</strong>
+                        <p id="latest-decision-detail">Agent outputs, winning groups, and leader synthesis decisions will appear here.</p>
+                    </article>
+                </div>
+
+                <div class="reasoning-rail" id="reasoning-flow">
+                    <div class="flow-step">
+                        <span>Question</span>
+                        <strong>Intake</strong>
+                    </div>
+                    <div class="flow-arrow">/</div>
+                    <div class="flow-step">
+                        <span>Agents</span>
+                        <strong>Independent Reasoning</strong>
+                    </div>
+                    <div class="flow-arrow">/</div>
+                    <div class="flow-step">
+                        <span>Groups</span>
+                        <strong>Debate</strong>
+                    </div>
+                    <div class="flow-arrow">/</div>
+                    <div class="flow-step">
+                        <span>Leader</span>
+                        <strong>Conclusion</strong>
+                    </div>
+                </div>
+
+                <div class="timeline-panel" id="timeline"></div>
+            </section>
+
+            <section class="workspace-card telemetry-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Telemetry</p>
+                        <h2>Runtime Signals</h2>
+                    </div>
+                </div>
+
+                <div class="telemetry-stack" id="status-stack"></div>
+            </section>
+        </main>
+
+        <section class="journey-card-wide">
+            <div class="section-head">
+                <div>
+                    <p class="section-kicker">Reasoning Overview</p>
+                    <h2>Question to Conclusion Map</h2>
+                </div>
+            </div>
+            <div id="debate-journey" class="journey-grid empty-state">The question-to-conclusion path will appear here while the debate runs.</div>
+        </section>
+
+        <section class="results-grid">
+            <article class="result-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Agents</p>
+                        <h3>Individual Agent Responses</h3>
+                    </div>
+                </div>
+                <div id="agent-responses" class="content-grid empty-state">Run a debate to view agent reasoning.</div>
+            </article>
+
+            <article class="result-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Topology</p>
+                        <h3>Group Formation</h3>
+                    </div>
+                </div>
+                <div id="group-formation" class="content-grid empty-state">Configured groups will appear here.</div>
+            </article>
+
+            <article class="result-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Debate</p>
+                        <h3>Group Debate</h3>
+                    </div>
+                </div>
+                <div id="group-debate" class="content-grid empty-state">Group debate synthesis will appear here.</div>
+            </article>
+
+            <article class="result-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Evaluation</p>
+                        <h3>Evaluation Results</h3>
+                    </div>
+                </div>
+                <div id="evaluation-results" class="content-grid empty-state">Evaluation metrics will appear here.</div>
+            </article>
+
+            <article class="result-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Selection</p>
+                        <h3>Winning Group</h3>
+                    </div>
+                </div>
+                <div id="winning-group" class="content-grid empty-state">Winning groups by round will be highlighted here.</div>
+            </article>
+
+            <article class="result-card">
+                <div class="section-head">
+                    <div>
+                        <p class="section-kicker">Synthesis</p>
+                        <h3>Leader Synthesis</h3>
+                    </div>
+                </div>
+                <div id="leader-synthesis" class="content-grid empty-state">Leader synthesis will appear here.</div>
+            </article>
+        </section>
+
+        <section class="final-card">
+            <div class="section-head">
+                <div>
+                    <p class="section-kicker">Conclusion</p>
+                    <h2>Final Answer</h2>
+                </div>
+            </div>
+            <div class="final-meta">
+                <span>Total Runtime</span>
+                <strong id="final-runtime">0.0s</strong>
+            </div>
+            <div id="final-answer" class="final-answer empty-state">The final answer will appear here.</div>
+        </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
