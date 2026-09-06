@@ -1,3 +1,7 @@
+/* ═══════════════════════════════════════════════
+   G-DMAD App Controller
+   ═══════════════════════════════════════════════ */
+
 const stageOrder = [
     "Question Received",
     "Initializing Agents",
@@ -10,681 +14,480 @@ const stageOrder = [
     "Final Answer",
 ];
 
-const elements = {
-    runBtn: document.getElementById("run-btn"),
-    clearBtn: document.getElementById("clear-btn"),
-    questionInput: document.getElementById("question-input"),
-    spinnerWrap: document.getElementById("spinner-wrap"),
-    runState: document.getElementById("run-state"),
-    currentStage: document.getElementById("current-stage"),
-    progressValue: document.getElementById("progress-value"),
-    progressFill: document.getElementById("progress-fill"),
-    statusLine: document.getElementById("status-line"),
-    activeProcess: document.getElementById("active-process"),
-    activeProcessDetail: document.getElementById("active-process-detail"),
-    latestDecision: document.getElementById("latest-decision"),
-    latestDecisionDetail: document.getElementById("latest-decision-detail"),
-    reasoningFlow: document.getElementById("reasoning-flow"),
-    timeline: document.getElementById("timeline"),
-    statTime: document.getElementById("stat-time"),
-    statStage: document.getElementById("stat-stage"),
-    statAgents: document.getElementById("stat-agents"),
-    statGroups: document.getElementById("stat-groups"),
-    statEvaluations: document.getElementById("stat-evaluations"),
-    statRounds: document.getElementById("stat-rounds"),
-    statusStack: document.getElementById("status-stack"),
-    debateJourney: document.getElementById("debate-journey"),
-    agentResponses: document.getElementById("agent-responses"),
-    groupFormation: document.getElementById("group-formation"),
-    groupDebate: document.getElementById("group-debate"),
-    evaluationResults: document.getElementById("evaluation-results"),
-    winningGroup: document.getElementById("winning-group"),
-    leaderSynthesis: document.getElementById("leader-synthesis"),
-    finalAnswer: document.getElementById("final-answer"),
-    finalRuntime: document.getElementById("final-runtime"),
+const $ = (id) => document.getElementById(id);
+
+const el = {
+    runBtn: $("run-btn"),
+    clearBtn: $("clear-btn"),
+    questionInput: $("question-input"),
+    spinnerWrap: $("spinner-wrap"),
+    navStatus: $("nav-status"),
+    elapsedTime: $("elapsed-time"),
+    totalTokens: $("total-tokens"),
+    progressBadge: $("progress-badge"),
+    progressFill: $("progress-fill"),
+    logStream: $("log-stream"),
+
+    // Token stats
+    promptTokens: $("prompt-tokens"),
+    completionTokens: $("completion-tokens"),
+    totalTokensDetail: $("total-tokens-detail"),
+    apiCalls: $("api-calls"),
+
+    // Group panels
+    group1Agents: $("group-1-agents"),
+    group2Agents: $("group-2-agents"),
+    group1Status: $("group-1-status"),
+    group2Status: $("group-2-status"),
+    group1Synthesis: $("group-1-synthesis"),
+    group2Synthesis: $("group-2-synthesis"),
+    group1Panel: $("group-1-panel"),
+    group2Panel: $("group-2-panel"),
+
+    // Eval
+    evalGrid: $("eval-grid"),
+    evalRoundBadge: $("eval-round-badge"),
+
+    // Final
+    finalAnswer: $("final-answer"),
+    finalTime: $("final-time"),
+    finalTokens: $("final-tokens"),
+    finalCalls: $("final-calls"),
 };
 
 const state = {
     running: false,
     startedAt: 0,
     timerId: null,
-    finalElapsedSeconds: 0,
+    stageSet: new Set(),
     completedAgents: 0,
-    completedEvaluations: 0,
     totalGroups: 0,
     totalRounds: 0,
-    currentStage: "Waiting",
-    activeStageIndex: -1,
-    stageSet: new Set(),
-    groups: [],
+    tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, api_calls: 0 },
     rounds: new Map(),
-    latestDecisionText: "",
+
+    // Track per-group, per-agent state for the LATEST round
+    groupAgents: { 1: {}, 2: {} },
+    groupSynthesis: { 1: "", 2: "" },
 };
 
-function initTimeline() {
-    elements.timeline.innerHTML = "";
-    stageOrder.forEach((stage, index) => {
-        const item = document.createElement("div");
-        item.className = "timeline-item";
-        item.dataset.stage = stage;
-        item.innerHTML = `
-            <div class="timeline-index">${index + 1}</div>
-            <div>
-                <strong>${stage}</strong>
-            </div>
-            <div class="timeline-status">Pending</div>
-        `;
-        elements.timeline.appendChild(item);
-    });
+/* ── Helpers ── */
+function escapeHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function updateReasoningFlow(stage) {
-    const mapping = {
-        "Question Received": 0,
-        "Initializing Agents": 1,
-        "Generating Independent Agent Reasoning": 1,
-        "Group Formation": 2,
-        "Group Debate": 2,
-        "Evaluation": 2,
-        "Winner Selection": 3,
-        "Leader Synthesis": 3,
-        "Final Answer": 3,
-    };
-    const activeIndex = mapping[stage] ?? -1;
-    const steps = elements.reasoningFlow.querySelectorAll(".flow-step");
-    steps.forEach((step, index) => {
-        step.classList.remove("active", "complete");
-        if (index < activeIndex) {
-            step.classList.add("complete");
-        } else if (index === activeIndex) {
-            step.classList.add("active");
-        }
-    });
+function truncate(text, len = 120) {
+    if (!text) return "";
+    const s = String(text).replace(/\s+/g, " ").trim();
+    return s.length > len ? s.slice(0, len) + "…" : s;
 }
 
-function setStage(stage, statusText) {
-    state.currentStage = stage;
-    elements.currentStage.textContent = stage;
-    elements.statStage.textContent = stage;
-    if (statusText) {
-        elements.statusLine.textContent = statusText;
-    }
+function formatTime(ms) {
+    const totalSec = ms / 1000;
+    const min = Math.floor(totalSec / 60);
+    const sec = (totalSec % 60).toFixed(1);
+    return min > 0 ? `${String(min).padStart(2, "0")}:${sec.padStart(4, "0")}` : `00:${sec.padStart(4, "0")}`;
+}
 
+function logTimeStamp() {
+    if (!state.startedAt) return "00:00";
+    const sec = ((Date.now() - state.startedAt) / 1000).toFixed(1);
+    return sec.padStart(5, " ") + "s";
+}
+
+/* ── Logging ── */
+function log(text, cls = "log-info") {
+    const entry = document.createElement("div");
+    entry.className = `log-entry ${cls}`;
+    entry.innerHTML = `<span class="log-time">${logTimeStamp()}</span>${escapeHtml(text)}`;
+    el.logStream.appendChild(entry);
+    el.logStream.scrollTop = el.logStream.scrollHeight;
+}
+
+/* ── Timer ── */
+function updateTimer() {
+    if (!state.startedAt) return;
+    const ms = Date.now() - state.startedAt;
+    el.elapsedTime.textContent = formatTime(ms);
+}
+
+/* ── Token Usage ── */
+function updateTokens(usage) {
+    if (!usage) return;
+    state.tokenUsage = usage;
+    el.promptTokens.textContent = (usage.prompt_tokens || 0).toLocaleString();
+    el.completionTokens.textContent = (usage.completion_tokens || 0).toLocaleString();
+    el.totalTokensDetail.textContent = (usage.total_tokens || 0).toLocaleString();
+    el.apiCalls.textContent = usage.api_calls || 0;
+    el.totalTokens.textContent = `${(usage.total_tokens || 0).toLocaleString()} tokens`;
+}
+
+/* ── Progress ── */
+function updateProgress() {
+    const pct = Math.round((state.stageSet.size / stageOrder.length) * 100);
+    el.progressBadge.textContent = `${pct}%`;
+    el.progressFill.style.width = `${pct}%`;
+}
+
+/* ── Pipeline Steps ── */
+function setStage(stage) {
+    state.stageSet.add(stage);
     const stageIndex = stageOrder.indexOf(stage);
-    if (stageIndex >= 0) {
-        state.activeStageIndex = Math.max(state.activeStageIndex, stageIndex);
-        state.stageSet.add(stage);
-    }
-
-    document.querySelectorAll(".timeline-item").forEach((item, index) => {
-        const label = item.dataset.stage;
-        const status = item.querySelector(".timeline-status");
-        item.classList.remove("active", "complete");
-
-        if (label === stage) {
-            item.classList.add("active");
-            status.textContent = "Running";
-        } else if (state.stageSet.has(label) || index < stageIndex) {
-            item.classList.add("complete");
-            status.textContent = "Completed";
-        } else {
-            status.textContent = "Pending";
+    document.querySelectorAll(".step").forEach((step, i) => {
+        step.classList.remove("active", "complete");
+        const stepStage = step.dataset.stage;
+        if (stepStage === stage) {
+            step.classList.add("active");
+        } else if (state.stageSet.has(stepStage) || i < stageIndex) {
+            step.classList.add("complete");
         }
     });
-
-    updateReasoningFlow(stage);
     updateProgress();
 }
 
-function pushStatus(text) {
-    const pill = document.createElement("div");
-    pill.className = "status-pill";
-    pill.textContent = text;
-    elements.statusStack.prepend(pill);
+/* ── Group Agent Rendering ── */
+function renderGroupAgents(groupIndex) {
+    const container = groupIndex === 1 ? el.group1Agents : el.group2Agents;
+    const agents = state.groupAgents[groupIndex] || {};
+    const agentDefs = [
+        { key: "IO_Agent", icon: "io", label: "IO", name: "IO Agent" },
+        { key: "CCoT_Agent", icon: "ccot", label: "CC", name: "CCoT Agent" },
+        { key: "DDCoT_Agent", icon: "ddcot", label: "DD", name: "DDCoT Agent" },
+    ];
+
+    container.innerHTML = agentDefs.map((def) => {
+        const data = agents[def.key];
+        const statusCls = data
+            ? data.status === "running" ? "running" : "completed"
+            : "empty-slot";
+        const content = data
+            ? data.status === "running"
+                ? "Generating response..."
+                : truncate(data.answer, 140)
+            : "Waiting for input...";
+
+        return `
+            <div class="agent-slot ${statusCls}">
+                <span class="agent-icon ${def.icon}">${def.label}</span>
+                <div class="agent-body">
+                    <strong>${def.name}</strong>
+                    <p>${escapeHtml(content)}</p>
+                </div>
+            </div>
+        `;
+    }).join("");
 }
 
-function updateProgress() {
-    const baseStageProgress = state.stageSet.size / stageOrder.length;
-    const totalAgentSteps = state.totalGroups && state.totalRounds ? state.totalGroups * 3 * state.totalRounds : 0;
-    const totalEvalSteps = state.totalRounds || 0;
-    const agentProgress = totalAgentSteps ? state.completedAgents / totalAgentSteps : 0;
-    const evalProgress = totalEvalSteps ? state.completedEvaluations / totalEvalSteps : 0;
-    const composite = Math.min(1, (baseStageProgress * 0.55) + (agentProgress * 0.3) + (evalProgress * 0.15));
-    const percent = Math.round(composite * 100);
-
-    elements.progressValue.textContent = `${percent}%`;
-    elements.progressFill.style.width = `${percent}%`;
-}
-
-function formatElapsed(seconds) {
-    return `${Number(seconds).toFixed(1)}s`;
-}
-
-function updateTimer() {
-    if (!state.startedAt) {
-        elements.statTime.textContent = "0.0s";
-        elements.finalRuntime.textContent = "0.0s";
-        return;
+function renderGroupSynthesis(groupIndex) {
+    const container = groupIndex === 1 ? el.group1Synthesis : el.group2Synthesis;
+    const text = state.groupSynthesis[groupIndex];
+    if (text) {
+        container.className = "group-synthesis has-content";
+        container.innerHTML = `
+            <span class="synthesis-label">Group Synthesis</span>
+            <p class="synthesis-text">${escapeHtml(truncate(text, 200))}</p>
+        `;
+    } else {
+        container.className = "group-synthesis";
+        container.innerHTML = `
+            <span class="synthesis-label">Group Synthesis</span>
+            <p class="synthesis-text">Pending debate synthesis...</p>
+        `;
     }
-    const elapsed = state.finalElapsedSeconds || ((Date.now() - state.startedAt) / 1000);
-    const formatted = formatElapsed(elapsed);
-    elements.statTime.textContent = formatted;
-    elements.finalRuntime.textContent = formatted;
 }
 
-function setActiveProcess(title, detail) {
-    elements.activeProcess.textContent = title;
-    elements.activeProcessDetail.textContent = detail;
+function setGroupStatus(groupIndex, text) {
+    const badge = groupIndex === 1 ? el.group1Status : el.group2Status;
+    badge.textContent = text;
 }
 
-function setLatestDecision(title, detail) {
-    state.latestDecisionText = title;
-    elements.latestDecision.textContent = title;
-    elements.latestDecisionDetail.textContent = detail;
+/* ── Evaluation Rendering ── */
+function renderEvaluations(roundNumber, evaluations, winnerIndex) {
+    el.evalRoundBadge.textContent = `R${roundNumber}`;
+    el.evalGrid.innerHTML = evaluations.map((ev) => {
+        const isWinner = ev.Group_Index === winnerIndex;
+        return `
+            <div class="eval-card ${isWinner ? "winner-card" : ""}">
+                <div class="eval-card-header">
+                    <strong>Group ${ev.Group_Index}</strong>
+                    ${isWinner ? '<span class="winner-badge">★ Winner</span>' : ""}
+                </div>
+                <div class="scores-row">
+                    <span class="score-chip">EG <span class="score-val">${ev.Evidence_Grounding ?? "-"}</span></span>
+                    <span class="score-chip">LC <span class="score-val">${ev.Logical_Coherence ?? "-"}</span></span>
+                    <span class="score-chip">HD <span class="score-val">${ev.Hallucination_Detection ?? "-"}</span></span>
+                    <span class="score-chip">DT <span class="score-val">${ev.Depth_of_Thought ?? "-"}</span></span>
+                    <span class="score-chip score-total">Total <span class="score-val">${ev.Total_Score ?? "-"}</span></span>
+                </div>
+            </div>
+        `;
+    }).join("");
 }
 
-function ensureRound(roundNumber) {
-    if (!state.rounds.has(roundNumber)) {
-        state.rounds.set(roundNumber, {
-            groups: new Map(),
-            evaluations: [],
-            winnerIndex: null,
-            leaderAnswer: "",
-        });
+/* ── Group winner highlight ── */
+function highlightWinner(winnerIndex) {
+    el.group1Panel.classList.remove("winner", "loser");
+    el.group2Panel.classList.remove("winner", "loser");
+    if (winnerIndex === 1) {
+        el.group1Panel.classList.add("winner");
+        el.group2Panel.classList.add("loser");
+    } else if (winnerIndex === 2) {
+        el.group2Panel.classList.add("winner");
+        el.group1Panel.classList.add("loser");
     }
-    return state.rounds.get(roundNumber);
 }
 
-function escapeHtml(value) {
-    return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-}
-
-function summarizeText(text, limit = 180) {
-    if (!text) {
-        return "No content available.";
-    }
-    const normalized = String(text).replace(/\s+/g, " ").trim();
-    return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
-}
-
+/* ── Reset ── */
 function resetState(clearQuestion = false) {
     state.running = false;
     state.startedAt = 0;
-    state.finalElapsedSeconds = 0;
+    state.stageSet = new Set();
     state.completedAgents = 0;
-    state.completedEvaluations = 0;
     state.totalGroups = 0;
     state.totalRounds = 0;
-    state.currentStage = "Waiting";
-    state.activeStageIndex = -1;
-    state.stageSet = new Set();
-    state.groups = [];
+    state.tokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, api_calls: 0 };
     state.rounds = new Map();
-    state.latestDecisionText = "";
+    state.groupAgents = { 1: {}, 2: {} };
+    state.groupSynthesis = { 1: "", 2: "" };
 
     clearInterval(state.timerId);
     state.timerId = null;
 
-    if (clearQuestion) {
-        elements.questionInput.value = "";
-    }
+    if (clearQuestion) el.questionInput.value = "";
 
-    elements.runBtn.disabled = false;
-    elements.clearBtn.disabled = false;
-    elements.spinnerWrap.hidden = true;
-    elements.runState.textContent = "Idle";
-    elements.currentStage.textContent = "Waiting";
-    elements.progressValue.textContent = "0%";
-    elements.progressFill.style.width = "0%";
-    elements.statusLine.textContent = "Initializing...";
-    elements.activeProcess.textContent = "Waiting for a question";
-    elements.activeProcessDetail.textContent = "The dashboard will show which agent or stage is currently working.";
-    elements.latestDecision.textContent = "No decision yet";
-    elements.latestDecisionDetail.textContent = "Agent outputs, winning groups, and leader synthesis decisions will appear here.";
-    elements.statTime.textContent = "0.0s";
-    elements.statStage.textContent = "Idle";
-    elements.statAgents.textContent = "0";
-    elements.statGroups.textContent = "0";
-    elements.statEvaluations.textContent = "0";
-    elements.statRounds.textContent = "0";
-    elements.statusStack.innerHTML = "";
+    el.runBtn.disabled = false;
+    el.clearBtn.disabled = false;
+    el.spinnerWrap.hidden = true;
+    el.navStatus.textContent = "Idle";
+    el.elapsedTime.textContent = "00:00.0";
+    el.totalTokens.textContent = "0 tokens";
+    el.progressBadge.textContent = "0%";
+    el.progressFill.style.width = "0%";
+    updateTokens(state.tokenUsage);
 
-    elements.debateJourney.className = "journey-grid empty-state";
-    elements.debateJourney.textContent = "The question-to-conclusion path will appear here while the debate runs.";
-    elements.agentResponses.className = "content-grid empty-state";
-    elements.agentResponses.textContent = "Run a debate to view agent reasoning.";
-    elements.groupFormation.className = "content-grid empty-state";
-    elements.groupFormation.textContent = "Configured groups will appear here.";
-    elements.groupDebate.className = "content-grid empty-state";
-    elements.groupDebate.textContent = "Group debate synthesis will appear here.";
-    elements.evaluationResults.className = "content-grid empty-state";
-    elements.evaluationResults.textContent = "Evaluation metrics will appear here.";
-    elements.winningGroup.className = "content-grid empty-state";
-    elements.winningGroup.textContent = "Winning groups by round will be highlighted here.";
-    elements.leaderSynthesis.className = "content-grid empty-state";
-    elements.leaderSynthesis.textContent = "Leader synthesis will appear here.";
-    elements.finalAnswer.className = "final-answer empty-state";
-    elements.finalAnswer.textContent = "The final answer will appear here.";
-    elements.finalRuntime.textContent = "0.0s";
+    // Reset groups
+    [1, 2].forEach((g) => {
+        renderGroupAgents(g);
+        renderGroupSynthesis(g);
+        setGroupStatus(g, "Waiting");
+    });
+    el.group1Panel.classList.remove("winner", "loser");
+    el.group2Panel.classList.remove("winner", "loser");
 
-    initTimeline();
-    updateReasoningFlow("Waiting");
+    // Reset eval
+    el.evalGrid.innerHTML = '<div class="eval-empty">Scores will appear after group debate completes.</div>';
+    el.evalRoundBadge.textContent = "—";
+
+    // Reset final
+    el.finalAnswer.className = "final-answer";
+    el.finalAnswer.textContent = "The final consensus answer will appear here after the debate concludes.";
+    el.finalTime.textContent = "0.0s";
+    el.finalTokens.textContent = "0";
+    el.finalCalls.textContent = "0";
+
+    // Reset pipeline
+    document.querySelectorAll(".step").forEach((s) => s.classList.remove("active", "complete"));
+
+    // Reset log
+    el.logStream.innerHTML = '<div class="log-entry log-info">System ready. Enter a question to begin.</div>';
 }
 
+/* ── Begin Run ── */
 function beginRun() {
     state.running = true;
     state.startedAt = Date.now();
-    state.finalElapsedSeconds = 0;
-    elements.runBtn.disabled = true;
-    elements.spinnerWrap.hidden = false;
-    elements.runState.textContent = "Running";
-    setStage("Question Received", "Question received. Starting G-DMAD execution.");
-    setActiveProcess("Question received", "The pipeline has accepted the problem and is preparing the multi-agent reasoning process.");
-    pushStatus("Initializing...");
-    state.timerId = window.setInterval(updateTimer, 100);
+    el.runBtn.disabled = true;
+    el.spinnerWrap.hidden = false;
+    el.navStatus.textContent = "Running";
+    el.navStatus.closest(".stat-chip").querySelector("svg circle")?.setAttribute("fill", "#68d391");
+    state.timerId = setInterval(updateTimer, 100);
+    setStage("Question Received");
+    log("Debate started", "log-stage");
 }
 
-function renderGroups() {
-    if (!state.groups.length) {
-        return;
-    }
-
-    elements.groupFormation.className = "content-grid";
-    elements.groupFormation.innerHTML = state.groups.map((group) => `
-        <div class="content-card">
-            <h4>Group ${group.group_index}</h4>
-            <span class="decision-chip">Debate team</span>
-            <ul>
-                ${group.agents.map((agent) => `<li>${agent}</li>`).join("")}
-            </ul>
-        </div>
-    `).join("");
-}
-
-function renderAgentResponses() {
-    const cards = [];
-    Array.from(state.rounds.entries()).sort((a, b) => a[0] - b[0]).forEach(([roundNumber, round]) => {
-        Array.from(round.groups.entries()).sort((a, b) => a[0] - b[0]).forEach(([groupIndex, group]) => {
-            Object.entries(group.agents || {}).forEach(([agentName, answer]) => {
-                cards.push(`
-                    <div class="content-card">
-                        <h4>Round ${roundNumber} | Group ${groupIndex} | ${agentName}</h4>
-                        <span class="decision-chip">Independent reasoning</span>
-                        <pre>${escapeHtml(answer)}</pre>
-                    </div>
-                `);
-            });
-        });
-    });
-
-    elements.agentResponses.className = cards.length ? "content-grid" : "content-grid empty-state";
-    elements.agentResponses.innerHTML = cards.length ? cards.join("") : "Run a debate to view agent reasoning.";
-}
-
-function renderGroupDebates() {
-    const cards = [];
-    Array.from(state.rounds.entries()).sort((a, b) => a[0] - b[0]).forEach(([roundNumber, round]) => {
-        Array.from(round.groups.entries()).sort((a, b) => a[0] - b[0]).forEach(([groupIndex, group]) => {
-            if (!group.groupAnswer) {
-                return;
-            }
-            cards.push(`
-                <div class="content-card">
-                    <h4>Round ${roundNumber} | Group ${groupIndex}</h4>
-                    <span class="decision-chip">Group debate synthesis</span>
-                    <pre>${escapeHtml(group.groupAnswer)}</pre>
-                </div>
-            `);
-        });
-    });
-
-    elements.groupDebate.className = cards.length ? "content-grid" : "content-grid empty-state";
-    elements.groupDebate.innerHTML = cards.length ? cards.join("") : "Group debate synthesis will appear here.";
-}
-
-function renderEvaluations() {
-    const cards = [];
-    Array.from(state.rounds.entries()).sort((a, b) => a[0] - b[0]).forEach(([roundNumber, round]) => {
-        round.evaluations.forEach((evaluation) => {
-            cards.push(`
-                <div class="content-card">
-                    <h4>Round ${roundNumber} | Group ${evaluation.Group_Index || "?"}</h4>
-                    <div class="metric-grid">
-                        <div class="metric"><span>Evidence Grounding</span><strong>${evaluation.Evidence_Grounding ?? "-"}</strong></div>
-                        <div class="metric"><span>Logical Coherence</span><strong>${evaluation.Logical_Coherence ?? "-"}</strong></div>
-                        <div class="metric"><span>Hallucination Detection</span><strong>${evaluation.Hallucination_Detection ?? "-"}</strong></div>
-                        <div class="metric"><span>Depth of Thought</span><strong>${evaluation.Depth_of_Thought ?? "-"}</strong></div>
-                        <div class="metric"><span>Total Score</span><strong>${evaluation.Total_Score ?? "-"}</strong></div>
-                        <div class="metric"><span>Detailed Reasoning</span><strong>${escapeHtml(evaluation.Detailed_Reasoning ?? "-")}</strong></div>
-                    </div>
-                </div>
-            `);
-        });
-    });
-
-    elements.evaluationResults.className = cards.length ? "content-grid" : "content-grid empty-state";
-    elements.evaluationResults.innerHTML = cards.length ? cards.join("") : "Evaluation metrics will appear here.";
-}
-
-function renderWinners() {
-    const cards = [];
-    Array.from(state.rounds.entries()).sort((a, b) => a[0] - b[0]).forEach(([roundNumber, round]) => {
-        if (!round.winnerIndex) {
-            return;
-        }
-        cards.push(`
-            <div class="content-card highlight">
-                <h4>Round ${roundNumber}</h4>
-                <span class="decision-chip">Winner selected</span>
-                <p>Winning Group: Group ${round.winnerIndex}</p>
-            </div>
-        `);
-    });
-
-    elements.winningGroup.className = cards.length ? "content-grid" : "content-grid empty-state";
-    elements.winningGroup.innerHTML = cards.length ? cards.join("") : "Winning groups by round will be highlighted here.";
-}
-
-function renderLeaderSynthesis() {
-    const cards = [];
-    Array.from(state.rounds.entries()).sort((a, b) => a[0] - b[0]).forEach(([roundNumber, round]) => {
-        if (!round.leaderAnswer) {
-            return;
-        }
-        cards.push(`
-            <div class="content-card">
-                <h4>Round ${roundNumber} Leader Synthesis</h4>
-                <span class="decision-chip">Conclusion carrier</span>
-                <pre>${escapeHtml(round.leaderAnswer)}</pre>
-            </div>
-        `);
-    });
-
-    elements.leaderSynthesis.className = cards.length ? "content-grid" : "content-grid empty-state";
-    elements.leaderSynthesis.innerHTML = cards.length ? cards.join("") : "Leader synthesis will appear here.";
-}
-
-function renderFinalAnswer(answer) {
-    elements.finalAnswer.className = "final-answer";
-    elements.finalAnswer.textContent = answer || "No final answer returned.";
-}
-
-function finalizeElapsed(elapsedSeconds) {
-    if (typeof elapsedSeconds === "number" && Number.isFinite(elapsedSeconds) && elapsedSeconds >= 0) {
-        state.finalElapsedSeconds = elapsedSeconds;
-    } else if (state.startedAt) {
-        state.finalElapsedSeconds = (Date.now() - state.startedAt) / 1000;
-    }
-    updateTimer();
-}
-
-function renderJourney() {
-    const sortedRounds = Array.from(state.rounds.entries()).sort((a, b) => a[0] - b[0]);
-    if (!sortedRounds.length) {
-        elements.debateJourney.className = "journey-grid empty-state";
-        elements.debateJourney.textContent = "The question-to-conclusion path will appear here while the debate runs.";
-        return;
-    }
-
-    const [latestRoundNumber, latestRound] = sortedRounds[sortedRounds.length - 1];
-    const firstGroupEntry = Array.from(latestRound.groups.entries()).sort((a, b) => a[0] - b[0])[0];
-    const debateSummary = firstGroupEntry ? summarizeText(firstGroupEntry[1].groupAnswer || "", 220) : "Waiting for group synthesis.";
-    const winnerText = latestRound.winnerIndex ? `Group ${latestRound.winnerIndex} selected as the strongest reasoning path.` : "Winner not selected yet.";
-    const leaderSummary = latestRound.leaderAnswer ? summarizeText(latestRound.leaderAnswer, 220) : "Leader synthesis pending.";
-
-    elements.debateJourney.className = "journey-grid";
-    elements.debateJourney.innerHTML = `
-        <article class="journey-card">
-            <h4>1. Problem Intake</h4>
-            <p>${escapeHtml(summarizeText(elements.questionInput.value || "No question entered.", 220))}</p>
-            <strong>The question becomes the shared target for all reasoning agents.</strong>
-        </article>
-        <article class="journey-card">
-            <h4>2. Agent Thinking</h4>
-            <p>${escapeHtml(state.latestDecisionText || "Agents are forming their own viewpoints.")}</p>
-            <strong>Round ${latestRoundNumber} shows parallel independent reasoning before debate.</strong>
-        </article>
-        <article class="journey-card">
-            <h4>3. Debate and Decision</h4>
-            <p>${escapeHtml(debateSummary)}</p>
-            <strong>${escapeHtml(winnerText)}</strong>
-        </article>
-        <article class="journey-card">
-            <h4>4. Conclusion</h4>
-            <p>${escapeHtml(leaderSummary)}</p>
-            <strong>The selected leader synthesis becomes the answer trajectory.</strong>
-        </article>
-    `;
-}
-
-function renderAll() {
-    renderGroups();
-    renderAgentResponses();
-    renderGroupDebates();
-    renderEvaluations();
-    renderWinners();
-    renderLeaderSynthesis();
-    renderJourney();
-}
-
+/* ── Event Handler ── */
 function handleEvent(event) {
+    if (event.token_usage) updateTokens(event.token_usage);
+
     switch (event.type) {
         case "question_received":
-            setStage("Question Received", "Question received by the debate pipeline.");
-            setActiveProcess("Question intake", "The system is registering the problem statement and preparing the execution path.");
-            pushStatus("Loading Configuration...");
+            setStage("Question Received");
+            log("Question received by pipeline", "log-info");
             break;
+
         case "stage_update":
-            setStage(event.stage, `${event.stage}...`);
-            setActiveProcess(event.stage, `${event.stage} is currently in progress.`);
-            pushStatus(`${event.stage}...`);
+            setStage(event.stage);
+            log(`Stage: ${event.stage}`, "log-stage");
             break;
+
         case "agents_initialized":
-            state.groups = event.groups || [];
             state.totalGroups = event.total_groups || 0;
             state.totalRounds = event.total_rounds || 0;
-            elements.statGroups.textContent = String(state.totalGroups);
-            elements.statRounds.textContent = String(state.totalRounds);
-            renderGroups();
-            setStage("Initializing Agents", "Creating agents and preparing group execution.");
-            setActiveProcess("Agents initialized", `${state.totalGroups} groups are ready, each with IO, CCoT, and DDCoT agents.`);
-            pushStatus("Creating Agents...");
-            renderJourney();
-            updateProgress();
+            setStage("Initializing Agents");
+            [1, 2].forEach((g) => setGroupStatus(g, "Ready"));
+            log(`${event.total_groups} groups × 3 agents initialized`, "log-info");
             break;
+
         case "round_started":
-            setStage("Generating Independent Agent Reasoning", `Round ${event.round_number} agent reasoning in progress.`);
-            setActiveProcess(`Round ${event.round_number} reasoning`, "Agents are thinking independently before group debate begins.");
-            pushStatus(`Running Round ${event.round_number}...`);
-            break;
-        case "leader_context_applied":
-            setLatestDecision(`Leader context applied to Group ${event.group_index}`, `Round ${event.round_number} uses the previous leader output as context for continued reasoning.`);
-            pushStatus(`Applying prior leader context to Group ${event.group_index} for Round ${event.round_number}.`);
-            renderJourney();
-            break;
-        case "agent_started":
-            setStage("Generating Independent Agent Reasoning", `Running ${event.agent_name} in Group ${event.group_index}, Round ${event.round_number}.`);
-            setActiveProcess(`${event.agent_name} is reasoning`, `Group ${event.group_index}, Round ${event.round_number} is generating an independent viewpoint.`);
-            pushStatus(`Running ${event.agent_name}...`);
-            break;
-        case "agent_completed": {
-            const round = ensureRound(event.round_number);
-            const group = round.groups.get(event.group_index) || { agents: {}, groupAnswer: "" };
-            group.agents[event.agent_name] = event.answer;
-            round.groups.set(event.group_index, group);
-            state.completedAgents += 1;
-            elements.statAgents.textContent = String(state.completedAgents);
-            setLatestDecision(`${event.agent_name} finished for Group ${event.group_index}`, summarizeText(event.answer, 220));
-            renderAgentResponses();
-            renderJourney();
-            updateProgress();
-            break;
-        }
-        case "group_round_completed": {
-            const round = ensureRound(event.round_number);
-            round.groups.set(event.group_index, {
-                agents: event.agent_answers || {},
-                groupAnswer: event.group_answer || "",
+            setStage("Generating Independent Agent Reasoning");
+            // Clear agent state for new round
+            state.groupAgents = { 1: {}, 2: {} };
+            state.groupSynthesis = { 1: "", 2: "" };
+            [1, 2].forEach((g) => {
+                renderGroupAgents(g);
+                renderGroupSynthesis(g);
+                setGroupStatus(g, `R${event.round_number}`);
             });
-            setStage("Group Debate", `Group ${event.group_index} completed debate synthesis for Round ${event.round_number}.`);
-            setActiveProcess("Group debate running", `Group ${event.group_index} has merged agent viewpoints into a synthesized group position.`);
-            setLatestDecision(`Group ${event.group_index} formed its debate answer`, summarizeText(event.group_answer, 220));
-            pushStatus("Running Group Debate...");
-            renderAll();
+            el.group1Panel.classList.remove("winner", "loser");
+            el.group2Panel.classList.remove("winner", "loser");
+            log(`Round ${event.round_number} started`, "log-stage");
             break;
-        }
+
+        case "agent_started":
+            state.groupAgents[event.group_index] = state.groupAgents[event.group_index] || {};
+            state.groupAgents[event.group_index][event.agent_name] = { status: "running", answer: "" };
+            renderGroupAgents(event.group_index);
+            setGroupStatus(event.group_index, "Reasoning");
+            log(`G${event.group_index} ${event.agent_name} started`, "log-agent");
+            break;
+
+        case "agent_completed":
+            state.groupAgents[event.group_index] = state.groupAgents[event.group_index] || {};
+            state.groupAgents[event.group_index][event.agent_name] = { status: "completed", answer: event.answer };
+            state.completedAgents++;
+            renderGroupAgents(event.group_index);
+            log(`G${event.group_index} ${event.agent_name} completed`, "log-success");
+            break;
+
+        case "leader_context_applied":
+            log(`Leader context applied to Group ${event.group_index}`, "log-info");
+            break;
+
+        case "group_round_completed":
+            setStage("Group Debate");
+            state.groupSynthesis[event.group_index] = event.group_answer || "";
+            renderGroupSynthesis(event.group_index);
+            setGroupStatus(event.group_index, "Debated");
+            log(`G${event.group_index} debate synthesis complete`, "log-success");
+            break;
+
         case "evaluation_completed": {
-            const round = ensureRound(event.round_number);
-            round.evaluations = event.evaluations || [];
-            state.completedEvaluations += 1;
-            elements.statEvaluations.textContent = `${state.completedEvaluations}/${state.totalRounds || 0}`;
-            setStage("Evaluation", `Evaluating groups for Round ${event.round_number}.`);
-            setActiveProcess("Evaluation in progress", `Round ${event.round_number} outputs are being scored for evidence, coherence, hallucination control, and depth.`);
-            setLatestDecision(`Evaluation completed for Round ${event.round_number}`, `Scored ${round.evaluations.length} group responses against the research evaluation criteria.`);
-            pushStatus("Evaluating Groups...");
-            renderEvaluations();
-            renderJourney();
-            updateProgress();
+            setStage("Evaluation");
+            const roundData = { evaluations: event.evaluations || [], winnerIndex: null };
+            state.rounds.set(event.round_number, roundData);
+            log(`Round ${event.round_number} evaluation complete`, "log-stage");
             break;
         }
+
         case "winner_selected": {
-            const round = ensureRound(event.round_number);
-            round.winnerIndex = event.winner_index;
-            round.leaderAnswer = event.leader_synthesis || event.leader_answer || "";
-            setStage("Winner Selection", `Winner selected for Round ${event.round_number}: Group ${event.winner_index}.`);
-            setActiveProcess("Winner selected", `Group ${event.winner_index} has been chosen as the strongest debate output for Round ${event.round_number}.`);
-            setLatestDecision(`Group ${event.winner_index} won Round ${event.round_number}`, summarizeText(event.final_answer || event.leader_answer, 220));
-            pushStatus("Selecting Winner...");
-            renderWinners();
-            renderLeaderSynthesis();
-            renderJourney();
+            setStage("Winner Selection");
+            const rd = state.rounds.get(event.round_number) || { evaluations: [], winnerIndex: null };
+            rd.winnerIndex = event.winner_index;
+            state.rounds.set(event.round_number, rd);
+            renderEvaluations(event.round_number, rd.evaluations, event.winner_index);
+            highlightWinner(event.winner_index);
+            log(`Round ${event.round_number}: Group ${event.winner_index} wins`, "log-success");
             break;
         }
-        case "leader_synthesis_completed": {
-            const round = ensureRound(event.round_number);
-            round.leaderAnswer = event.leader_synthesis || event.leader_answer || "";
-            setStage("Leader Synthesis", `Leader synthesis completed for Round ${event.round_number}.`);
-            setActiveProcess("Leader synthesis", "The winning group's reasoning is now being carried forward as the round leader answer.");
-            setLatestDecision(`Leader synthesized Round ${event.round_number}`, summarizeText(event.final_answer || event.leader_answer, 220));
-            pushStatus("Leader Synthesis...");
-            renderLeaderSynthesis();
-            renderJourney();
+
+        case "leader_synthesis_completed":
+            setStage("Leader Synthesis");
+            log(`Leader synthesis R${event.round_number} complete`, "log-info");
             break;
-        }
+
         case "final_answer":
-            setStage("Final Answer", "Generating final answer...");
-            setActiveProcess("Final answer generation", "The last selected leader reasoning is being presented as the conclusion.");
-            setLatestDecision("Conclusion ready", summarizeText(event.leader_answer, 220));
-            pushStatus("Generating Final Answer...");
-            renderFinalAnswer(event.leader_answer);
-            renderJourney();
+            setStage("Final Answer");
+            el.finalAnswer.className = "final-answer has-answer";
+            el.finalAnswer.textContent = event.leader_answer || "No answer returned.";
+            log("Final answer generated", "log-success");
             break;
+
         case "complete":
-            setStage("Final Answer", "Completed.");
             state.stageSet = new Set(stageOrder);
             updateProgress();
-            elements.progressValue.textContent = "100%";
-            elements.progressFill.style.width = "100%";
-            elements.runState.textContent = "Completed";
-            elements.statusLine.textContent = "Completed.";
-            elements.runBtn.disabled = false;
-            elements.spinnerWrap.hidden = true;
-            setActiveProcess("Execution complete", "All agent reasoning, debates, evaluations, and synthesis steps have finished.");
-            pushStatus("Completed.");
+            el.navStatus.textContent = "Completed";
+            el.runBtn.disabled = false;
+            el.spinnerWrap.hidden = true;
             clearInterval(state.timerId);
             state.timerId = null;
-            finalizeElapsed(event.elapsed_seconds);
-            if (event.result) {
-                renderFinalAnswer(event.result.leader_answer);
+
+            if (event.elapsed_seconds) {
+                const fmt = Number(event.elapsed_seconds).toFixed(1);
+                el.elapsedTime.textContent = formatTime(event.elapsed_seconds * 1000);
+                el.finalTime.textContent = `${fmt}s`;
             }
-            renderJourney();
+            el.finalTokens.textContent = (state.tokenUsage.total_tokens || 0).toLocaleString();
+            el.finalCalls.textContent = state.tokenUsage.api_calls || 0;
+
+            if (event.result?.leader_answer) {
+                el.finalAnswer.className = "final-answer has-answer";
+                el.finalAnswer.textContent = event.result.leader_answer;
+            }
+            if (event.result?.token_usage) updateTokens(event.result.token_usage);
+
+            log("Pipeline completed successfully", "log-success");
             break;
+
         case "error":
-            elements.runState.textContent = "Error";
-            elements.statusLine.textContent = event.message || "An unexpected error occurred.";
-            elements.spinnerWrap.hidden = true;
-            elements.runBtn.disabled = false;
-            setActiveProcess("Execution error", "The pipeline stopped before completing the debate.");
+            el.navStatus.textContent = "Error";
+            el.runBtn.disabled = false;
+            el.spinnerWrap.hidden = true;
             clearInterval(state.timerId);
             state.timerId = null;
-            finalizeElapsed(event.elapsed_seconds);
-            pushStatus(`Error: ${event.message || "Unknown error"}`);
-            break;
-        default:
+            log(`Error: ${event.message || "Unknown error"}`, "log-error");
             break;
     }
 }
 
+/* ── Stream Debate ── */
 async function streamDebate(question) {
-    const response = await fetch("/debate", {
+    const res = await fetch("/debate", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/x-ndjson",
-        },
+        headers: { "Content-Type": "application/json", "Accept": "application/x-ndjson" },
         body: JSON.stringify({ question }),
     });
 
-    if (!response.ok) {
-        const message = (await response.text()) || "Failed to start the debate pipeline.";
-        throw new Error(message);
-    }
+    if (!res.ok) throw new Error(await res.text() || "Failed to start debate.");
+    if (!res.body) throw new Error("No event stream returned.");
 
-    if (!response.body) {
-        throw new Error("The server did not return a readable event stream.");
-    }
-
-    const reader = response.body.getReader();
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 
     while (true) {
         const { value, done } = await reader.read();
-        if (done) {
-            break;
-        }
-
+        if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-
-        lines.forEach((line) => {
+        for (const line of lines) {
             const trimmed = line.trim();
-            if (!trimmed) {
-                return;
-            }
-            handleEvent(JSON.parse(trimmed));
-        });
+            if (trimmed) handleEvent(JSON.parse(trimmed));
+        }
     }
-
-    if (buffer.trim()) {
-        handleEvent(JSON.parse(buffer.trim()));
-    }
+    if (buffer.trim()) handleEvent(JSON.parse(buffer.trim()));
 }
 
+/* ── Run Debate ── */
 async function runDebate() {
-    const question = elements.questionInput.value.trim();
-    if (!question || state.running) {
-        return;
-    }
+    const question = el.questionInput.value.trim();
+    if (!question || state.running) return;
 
     resetState(false);
     beginRun();
 
     try {
         await streamDebate(question);
-    } catch (error) {
-        handleEvent({ type: "error", message: error.message });
+    } catch (err) {
+        handleEvent({ type: "error", message: err.message });
     } finally {
         state.running = false;
     }
 }
 
-elements.runBtn.addEventListener("click", runDebate);
-elements.clearBtn.addEventListener("click", () => resetState(true));
-
-initTimeline();
-updateReasoningFlow("Waiting");
+/* ── Event Listeners ── */
+el.runBtn.addEventListener("click", runDebate);
+el.clearBtn.addEventListener("click", () => resetState(true));
+el.questionInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) runDebate();
+});

@@ -3,248 +3,253 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>G-DMAD Research Dashboard</title>
+    <title>G-DMAD · Multi-Agent Debate System</title>
+    <meta name="description" content="Group-Based Diverse Multi-Agent Debate for Robust AI Reasoning">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
-    <div class="app-shell">
-        <div class="ambient ambient-one"></div>
-        <div class="ambient ambient-two"></div>
-        <div class="ambient-grid"></div>
+    <div class="app">
+        <!-- Ambient background effects -->
+        <div class="bg-glow bg-glow-1"></div>
+        <div class="bg-glow bg-glow-2"></div>
+        <div class="bg-grid"></div>
 
-        <header class="hero-card">
-            <div class="hero-copy">
-                <p class="hero-kicker">Final Year Project · AI Research Runtime</p>
-                <h1>G-DMAD</h1>
-                <p class="hero-subtitle">Group-Based Diverse Multi-Agent Debate for Robust Reasoning</p>
-                <div class="hero-status-row">
-                    <span class="hero-pill hero-pill-accent">Multi-Agent Research Console</span>
-                    <span class="hero-pill" id="run-state">Idle</span>
+        <!-- Top Navigation Bar -->
+        <nav class="topbar">
+            <div class="topbar-brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+                        <line x1="12" y1="22" x2="12" y2="15.5"/>
+                        <line x1="22" y1="8.5" x2="12" y2="15.5"/>
+                        <line x1="2" y1="8.5" x2="12" y2="15.5"/>
+                    </svg>
+                </div>
+                <div>
+                    <strong>G-DMAD</strong>
+                    <span class="brand-sub">Multi-Agent Debate</span>
                 </div>
             </div>
-
-            <div class="hero-orbit">
-                <div class="orbit-core">
-                    <span class="orbit-label">Debate Runtime</span>
-                    <strong id="current-stage">Waiting</strong>
+            <div class="topbar-stats">
+                <div class="stat-chip">
+                    <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><circle cx="8" cy="8" r="3"/></svg>
+                    <span id="nav-status">Idle</span>
                 </div>
-                <div class="orbit-ring orbit-ring-a"></div>
-                <div class="orbit-ring orbit-ring-b"></div>
-                <div class="orbit-node orbit-node-a"></div>
-                <div class="orbit-node orbit-node-b"></div>
-                <div class="orbit-node orbit-node-c"></div>
+                <div class="stat-chip timer-chip" id="nav-timer">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14">
+                        <circle cx="8" cy="8" r="6.5"/>
+                        <polyline points="8 4.5 8 8 10.5 9.5"/>
+                    </svg>
+                    <span id="elapsed-time">00:00.0</span>
+                </div>
+                <div class="stat-chip token-chip">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14">
+                        <rect x="2" y="4" width="12" height="8" rx="2"/>
+                        <line x1="5" y1="7" x2="11" y2="7"/>
+                        <line x1="5" y1="9" x2="9" y2="9"/>
+                    </svg>
+                    <span id="total-tokens">0 tokens</span>
+                </div>
             </div>
-        </header>
+            <div class="topbar-meta">
+                <span class="meta-tag" id="model-tag">gpt-4o-mini</span>
+            </div>
+        </nav>
 
-        <section class="top-ribbon">
-            <article class="ribbon-card">
-                <span>Execution Time</span>
-                <strong id="stat-time">0.0s</strong>
-            </article>
-            <article class="ribbon-card">
-                <span>Completed Agents</span>
-                <strong id="stat-agents">0</strong>
-            </article>
-            <article class="ribbon-card">
-                <span>Groups</span>
-                <strong id="stat-groups">0</strong>
-            </article>
-            <article class="ribbon-card">
-                <span>Evaluation Progress</span>
-                <strong id="stat-evaluations">0</strong>
-            </article>
-            <article class="ribbon-card">
-                <span>Rounds</span>
-                <strong id="stat-rounds">0</strong>
-            </article>
-            <article class="ribbon-card">
-                <span>Current Stage</span>
-                <strong id="stat-stage">Idle</strong>
-            </article>
-        </section>
-
-        <main class="workspace-grid">
-            <section class="workspace-card command-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Input Console</p>
-                        <h2>Question Workspace</h2>
+        <!-- Main Layout -->
+        <div class="layout">
+            <!-- Left Sidebar: Input + Pipeline -->
+            <aside class="sidebar">
+                <!-- Question Input -->
+                <div class="panel input-panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z"/></svg>
+                        </span>
+                        <h2>Question</h2>
+                    </div>
+                    <textarea id="question-input" placeholder="Enter a reasoning question to debate..." spellcheck="false"></textarea>
+                    <div class="input-actions">
+                        <button id="run-btn" class="btn-primary" type="button">
+                            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><polygon points="4 2 14 8 4 14"/></svg>
+                            Run Debate
+                        </button>
+                        <button id="clear-btn" class="btn-ghost" type="button">Clear</button>
+                        <div class="spinner-wrap" id="spinner-wrap" hidden>
+                            <span class="spinner"></span>
+                            <span>Processing...</span>
+                        </div>
                     </div>
                 </div>
 
-                <label class="sr-only" for="question-input">Reasoning Question</label>
-                <textarea id="question-input" placeholder="Enter your reasoning question..."></textarea>
-
-                <div class="command-actions">
-                    <button id="run-btn" class="primary-action" type="button">Run Debate</button>
-                    <button id="clear-btn" class="secondary-action" type="button">Clear</button>
-                    <div class="processing-indicator" id="spinner-wrap" hidden>
-                        <span class="spinner"></span>
-                        <span>Debate in progress</span>
+                <!-- Pipeline Steps -->
+                <div class="panel pipeline-panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-11v4l3 2"/></svg>
+                        </span>
+                        <h2>Pipeline</h2>
+                        <span class="badge" id="progress-badge">0%</span>
                     </div>
-                </div>
-
-                <div class="question-footnote">
-                    Submit a reasoning question to watch the full G-DMAD pipeline unfold from agent-level thinking to leader conclusion.
-                </div>
-            </section>
-
-            <section class="workspace-card mission-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Live Runtime</p>
-                        <h2>Execution Theater</h2>
-                    </div>
-                    <span class="stage-badge" id="progress-value">0%</span>
-                </div>
-
-                <div class="progress-panel">
-                    <div class="progress-track">
+                    <div class="progress-bar">
                         <div class="progress-fill" id="progress-fill"></div>
                     </div>
-                    <div class="status-banner" id="status-line">Initializing...</div>
-                </div>
-
-                <div class="insight-grid">
-                    <article class="insight-card">
-                        <span class="insight-label">Active Process</span>
-                        <strong id="active-process">Waiting for a question</strong>
-                        <p id="active-process-detail">The dashboard will show which agent or stage is currently working.</p>
-                    </article>
-                    <article class="insight-card">
-                        <span class="insight-label">Latest Decision</span>
-                        <strong id="latest-decision">No decision yet</strong>
-                        <p id="latest-decision-detail">Agent outputs, winning groups, and leader synthesis decisions will appear here.</p>
-                    </article>
-                </div>
-
-                <div class="reasoning-rail" id="reasoning-flow">
-                    <div class="flow-step">
-                        <span>Question</span>
-                        <strong>Intake</strong>
-                    </div>
-                    <div class="flow-arrow">/</div>
-                    <div class="flow-step">
-                        <span>Agents</span>
-                        <strong>Independent Reasoning</strong>
-                    </div>
-                    <div class="flow-arrow">/</div>
-                    <div class="flow-step">
-                        <span>Groups</span>
-                        <strong>Debate</strong>
-                    </div>
-                    <div class="flow-arrow">/</div>
-                    <div class="flow-step">
-                        <span>Leader</span>
-                        <strong>Conclusion</strong>
+                    <div class="pipeline-steps" id="pipeline-steps">
+                        <div class="step" data-stage="Question Received"><div class="step-dot"></div><span>Question Intake</span></div>
+                        <div class="step" data-stage="Initializing Agents"><div class="step-dot"></div><span>Agent Init</span></div>
+                        <div class="step" data-stage="Generating Independent Agent Reasoning"><div class="step-dot"></div><span>Independent Reasoning</span></div>
+                        <div class="step" data-stage="Group Formation"><div class="step-dot"></div><span>Group Formation</span></div>
+                        <div class="step" data-stage="Group Debate"><div class="step-dot"></div><span>Group Debate</span></div>
+                        <div class="step" data-stage="Evaluation"><div class="step-dot"></div><span>Evaluation</span></div>
+                        <div class="step" data-stage="Winner Selection"><div class="step-dot"></div><span>Winner Selection</span></div>
+                        <div class="step" data-stage="Leader Synthesis"><div class="step-dot"></div><span>Leader Synthesis</span></div>
+                        <div class="step" data-stage="Final Answer"><div class="step-dot"></div><span>Final Answer</span></div>
                     </div>
                 </div>
 
-                <div class="timeline-panel" id="timeline"></div>
-            </section>
+                <!-- Token Usage Panel -->
+                <div class="panel tokens-panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M4 4v12h12V4H4zm2 2h8v2H6V6zm0 4h5v2H6v-2z"/></svg>
+                        </span>
+                        <h2>Token Usage</h2>
+                    </div>
+                    <div class="token-grid">
+                        <div class="token-stat">
+                            <span class="token-label">Prompt</span>
+                            <strong id="prompt-tokens">0</strong>
+                        </div>
+                        <div class="token-stat">
+                            <span class="token-label">Completion</span>
+                            <strong id="completion-tokens">0</strong>
+                        </div>
+                        <div class="token-stat">
+                            <span class="token-label">Total</span>
+                            <strong id="total-tokens-detail">0</strong>
+                        </div>
+                        <div class="token-stat">
+                            <span class="token-label">API Calls</span>
+                            <strong id="api-calls">0</strong>
+                        </div>
+                    </div>
+                </div>
+            </aside>
 
-            <section class="workspace-card telemetry-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Telemetry</p>
-                        <h2>Runtime Signals</h2>
+            <!-- Center: Groups Side by Side + Results -->
+            <main class="main-content">
+                <!-- Groups Side-by-Side -->
+                <div class="groups-container" id="groups-container">
+                    <div class="panel group-panel" id="group-1-panel">
+                        <div class="panel-header">
+                            <span class="group-badge group-badge-1">G1</span>
+                            <h2>Group 1</h2>
+                            <span class="badge group-status" id="group-1-status">Waiting</span>
+                        </div>
+                        <div class="agents-stack" id="group-1-agents">
+                            <div class="agent-slot empty-slot">
+                                <span class="agent-icon io">IO</span>
+                                <div class="agent-body"><strong>IO Agent</strong><p>Waiting for input...</p></div>
+                            </div>
+                            <div class="agent-slot empty-slot">
+                                <span class="agent-icon ccot">CC</span>
+                                <div class="agent-body"><strong>CCoT Agent</strong><p>Waiting for input...</p></div>
+                            </div>
+                            <div class="agent-slot empty-slot">
+                                <span class="agent-icon ddcot">DD</span>
+                                <div class="agent-body"><strong>DDCoT Agent</strong><p>Waiting for input...</p></div>
+                            </div>
+                        </div>
+                        <div class="group-synthesis" id="group-1-synthesis">
+                            <span class="synthesis-label">Group Synthesis</span>
+                            <p class="synthesis-text">Pending debate synthesis...</p>
+                        </div>
+                    </div>
+
+                    <div class="panel group-panel" id="group-2-panel">
+                        <div class="panel-header">
+                            <span class="group-badge group-badge-2">G2</span>
+                            <h2>Group 2</h2>
+                            <span class="badge group-status" id="group-2-status">Waiting</span>
+                        </div>
+                        <div class="agents-stack" id="group-2-agents">
+                            <div class="agent-slot empty-slot">
+                                <span class="agent-icon io">IO</span>
+                                <div class="agent-body"><strong>IO Agent</strong><p>Waiting for input...</p></div>
+                            </div>
+                            <div class="agent-slot empty-slot">
+                                <span class="agent-icon ccot">CC</span>
+                                <div class="agent-body"><strong>CCoT Agent</strong><p>Waiting for input...</p></div>
+                            </div>
+                            <div class="agent-slot empty-slot">
+                                <span class="agent-icon ddcot">DD</span>
+                                <div class="agent-body"><strong>DDCoT Agent</strong><p>Waiting for input...</p></div>
+                            </div>
+                        </div>
+                        <div class="group-synthesis" id="group-2-synthesis">
+                            <span class="synthesis-label">Group Synthesis</span>
+                            <p class="synthesis-text">Pending debate synthesis...</p>
+                        </div>
                     </div>
                 </div>
 
-                <div class="telemetry-stack" id="status-stack"></div>
-            </section>
-        </main>
-
-        <section class="journey-card-wide">
-            <div class="section-head">
-                <div>
-                    <p class="section-kicker">Reasoning Overview</p>
-                    <h2>Question to Conclusion Map</h2>
-                </div>
-            </div>
-            <div id="debate-journey" class="journey-grid empty-state">The question-to-conclusion path will appear here while the debate runs.</div>
-        </section>
-
-        <section class="results-grid">
-            <article class="result-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Agents</p>
-                        <h3>Individual Agent Responses</h3>
+                <!-- Evaluation Row -->
+                <div class="eval-row" id="eval-row">
+                    <div class="panel eval-panel">
+                        <div class="panel-header">
+                            <span class="panel-icon eval-icon">
+                                <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 2l2.4 4.8L18 7.6l-4 3.9.9 5.5L10 14.4 5.1 17l.9-5.5-4-3.9 5.6-.8L10 2z"/></svg>
+                            </span>
+                            <h2>Evaluation & Scoring</h2>
+                            <span class="badge" id="eval-round-badge">—</span>
+                        </div>
+                        <div class="eval-grid" id="eval-grid">
+                            <div class="eval-empty">Scores will appear after group debate completes.</div>
+                        </div>
                     </div>
                 </div>
-                <div id="agent-responses" class="content-grid empty-state">Run a debate to view agent reasoning.</div>
-            </article>
 
-            <article class="result-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Topology</p>
-                        <h3>Group Formation</h3>
+                <!-- Final Answer -->
+                <div class="panel final-panel" id="final-panel">
+                    <div class="panel-header">
+                        <span class="panel-icon final-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm-1 12l-3-3 1.4-1.4L9 11.2l3.6-3.6L14 9l-5 5z"/></svg>
+                        </span>
+                        <h2>Final Answer</h2>
+                        <div class="final-meta">
+                            <span class="meta-item"><strong id="final-time">0.0s</strong> elapsed</span>
+                            <span class="meta-divider">·</span>
+                            <span class="meta-item"><strong id="final-tokens">0</strong> tokens</span>
+                            <span class="meta-divider">·</span>
+                            <span class="meta-item"><strong id="final-calls">0</strong> calls</span>
+                        </div>
+                    </div>
+                    <div class="final-answer" id="final-answer">
+                        The final consensus answer will appear here after the debate concludes.
                     </div>
                 </div>
-                <div id="group-formation" class="content-grid empty-state">Configured groups will appear here.</div>
-            </article>
+            </main>
 
-            <article class="result-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Debate</p>
-                        <h3>Group Debate</h3>
+            <!-- Right Sidebar: Live Log -->
+            <aside class="sidebar-right">
+                <div class="panel log-panel">
+                    <div class="panel-header">
+                        <span class="panel-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M3 4h14v2H3V4zm0 5h10v2H3V9zm0 5h14v2H3v-2z"/></svg>
+                        </span>
+                        <h2>Live Log</h2>
+                    </div>
+                    <div class="log-stream" id="log-stream">
+                        <div class="log-entry log-info">System ready. Enter a question to begin.</div>
                     </div>
                 </div>
-                <div id="group-debate" class="content-grid empty-state">Group debate synthesis will appear here.</div>
-            </article>
-
-            <article class="result-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Evaluation</p>
-                        <h3>Evaluation Results</h3>
-                    </div>
-                </div>
-                <div id="evaluation-results" class="content-grid empty-state">Evaluation metrics will appear here.</div>
-            </article>
-
-            <article class="result-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Selection</p>
-                        <h3>Winning Group</h3>
-                    </div>
-                </div>
-                <div id="winning-group" class="content-grid empty-state">Winning groups by round will be highlighted here.</div>
-            </article>
-
-            <article class="result-card">
-                <div class="section-head">
-                    <div>
-                        <p class="section-kicker">Synthesis</p>
-                        <h3>Leader Synthesis</h3>
-                    </div>
-                </div>
-                <div id="leader-synthesis" class="content-grid empty-state">Leader synthesis will appear here.</div>
-            </article>
-        </section>
-
-        <section class="final-card">
-            <div class="section-head">
-                <div>
-                    <p class="section-kicker">Conclusion</p>
-                    <h2>Final Answer</h2>
-                </div>
-            </div>
-            <div class="final-meta">
-                <span>Total Runtime</span>
-                <strong id="final-runtime">0.0s</strong>
-            </div>
-            <div id="final-answer" class="final-answer empty-state">The final answer will appear here.</div>
-        </section>
+            </aside>
+        </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2"></script>
 </body>
 </html>

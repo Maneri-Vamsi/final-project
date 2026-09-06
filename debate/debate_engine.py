@@ -1,5 +1,7 @@
 from __future__ import annotations
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, List, Optional
 
 from group.group_manager import GroupManager
@@ -16,24 +18,36 @@ class DebateEngine:
         self.group_managers: List[GroupManager] = [GroupManager(i + 1, llm) for i in range(groups)]
         self.meta_evaluator = MetaEvaluator(llm)
         self.leader_selector = LeaderSelector()
+        self._emit_lock = threading.Lock()
 
     def run(self, question: str) -> str:
         leader_answer: Optional[str] = None
         last_leader_answer = ""
 
         for round_number in range(1, self.rounds + 1):
-            group_results: List[Dict[str, str]] = []
-            for manager in self.group_managers:
-                group_result = manager.run_round(question, round_number, leader_answer)
-                group_results.append(group_result)
+            # Run all groups in parallel
+            with ThreadPoolExecutor(max_workers=len(self.group_managers)) as executor:
+                futures = {
+                    executor.submit(manager.run_round, question, round_number, leader_answer): manager
+                    for manager in self.group_managers
+                }
+                group_results: List[Dict[str, str]] = []
+                for future in futures:
+                    group_results.append(future.result())
 
             group_answers = [result["group_answer"] for result in group_results]
             evaluations = self.meta_evaluator.evaluate(question, group_answers)
-            chosen_index = self.leader_selector.select_leader(evaluations)
+            chosen_index = self.leader_selector.select_leader(evaluations, round_number=round_number)
             leader_answer = group_answers[chosen_index]
             last_leader_answer = leader_answer
 
         return self._extract_final_answer(last_leader_answer)
+
+    def _thread_safe_emit(self, emit, event):
+        """Emit an event with thread safety."""
+        if emit:
+            with self._emit_lock:
+                emit(event)
 
     def run_with_trace(
         self,
@@ -52,8 +66,10 @@ class DebateEngine:
             for manager in self.group_managers
         ]
 
+        self.llm.reset_usage()
+
         if emit:
-            emit({"type": "question_received", "question": question})
+            emit({"type": "question_received", "question": question, "token_usage": self.llm.get_usage()})
             emit(
                 {
                     "type": "stage_update",
@@ -80,7 +96,6 @@ class DebateEngine:
             )
 
         for round_number in range(1, self.rounds + 1):
-            group_results: List[Dict[str, str]] = []
             round_trace: Dict[str, object] = {
                 "round_number": round_number,
                 "groups": [],
@@ -95,11 +110,36 @@ class DebateEngine:
                         "type": "round_started",
                         "round_number": round_number,
                         "stage": "Generating Independent Agent Reasoning",
+                        "token_usage": self.llm.get_usage(),
                     }
                 )
 
+            # Create a thread-safe emit wrapper for parallel execution
+            safe_emit = (lambda e: self._thread_safe_emit(emit, e)) if emit else None
+
+            # Run all groups in PARALLEL using threads
+            group_results_map: Dict[int, Dict[str, str]] = {}
+
+            with ThreadPoolExecutor(max_workers=len(self.group_managers)) as executor:
+                futures = {
+                    executor.submit(
+                        manager.run_round_with_trace,
+                        question,
+                        round_number,
+                        leader_answer,
+                        safe_emit,
+                    ): manager
+                    for manager in self.group_managers
+                }
+                for future in as_completed(futures):
+                    manager = futures[future]
+                    group_result = future.result()
+                    group_results_map[manager.group_index] = group_result
+
+            # Reconstruct results in group order
+            group_results: List[Dict[str, str]] = []
             for manager in self.group_managers:
-                group_result = manager.run_round_with_trace(question, round_number, leader_answer, emit)
+                group_result = group_results_map[manager.group_index]
                 group_results.append(group_result)
                 round_trace["groups"].append(
                     {
@@ -126,7 +166,7 @@ class DebateEngine:
                 )
 
             evaluations = self.meta_evaluator.evaluate(question, group_answers)
-            chosen_index = self.leader_selector.select_leader(evaluations)
+            chosen_index = self.leader_selector.select_leader(evaluations, round_number=round_number)
             leader_answer = group_answers[chosen_index]
             last_leader_answer = leader_answer
             last_final_answer = self._extract_final_answer(leader_answer)
@@ -143,6 +183,7 @@ class DebateEngine:
                         "type": "evaluation_completed",
                         "round_number": round_number,
                         "evaluations": evaluations,
+                        "token_usage": self.llm.get_usage(),
                     }
                 )
                 emit(
@@ -153,6 +194,7 @@ class DebateEngine:
                         "leader_synthesis": leader_answer,
                         "leader_answer": leader_answer,
                         "final_answer": last_final_answer,
+                        "token_usage": self.llm.get_usage(),
                     }
                 )
                 emit(
@@ -162,8 +204,11 @@ class DebateEngine:
                         "leader_synthesis": leader_answer,
                         "leader_answer": leader_answer,
                         "final_answer": last_final_answer,
+                        "token_usage": self.llm.get_usage(),
                     }
                 )
+
+        final_usage = self.llm.get_usage()
 
         if emit:
             emit(
@@ -171,6 +216,7 @@ class DebateEngine:
                     "type": "final_answer",
                     "leader_synthesis": last_leader_answer,
                     "leader_answer": last_final_answer,
+                    "token_usage": final_usage,
                 }
             )
 
@@ -180,6 +226,7 @@ class DebateEngine:
             "groups": groups_snapshot,
             "rounds": rounds_trace,
             "total_rounds": self.rounds,
+            "token_usage": final_usage,
         }
 
     def _extract_final_answer(self, group_answer: str) -> str:

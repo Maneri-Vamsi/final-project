@@ -18,7 +18,15 @@ class GroupManager:
         self.ddcot_agent = DDCoTAgent(llm)
 
     def _render_context(self) -> str:
-        return self.context.render()
+        base_context = self.context.render()
+        role_desc = (
+            "Debate Perspective: Group 1 [Analytical & Constructive] — Emphasize foundational evidence, core facts, direct reasoning, and clear affirmative derivations."
+            if self.group_index == 1
+            else "Debate Perspective: Group 2 [Critical & Dialectical] — Scrutinize hidden assumptions, analyze edge cases, explore counter-arguments, and stress-test alternatives."
+        )
+        if base_context:
+            return f"[{role_desc}]\n\n{base_context}"
+        return f"[{role_desc}]"
 
     def run_round(self, question: str, round_number: int, leader_answer: Optional[str] = None) -> Dict[str, str]:
         context_text = self._render_context()
@@ -95,6 +103,7 @@ class GroupManager:
                         "group_index": self.group_index,
                         "round_number": round_number,
                         "agent_name": agent_name,
+                        "token_usage": self.llm.get_usage(),
                     }
                 )
 
@@ -110,6 +119,7 @@ class GroupManager:
                         "round_number": round_number,
                         "agent_name": agent_name,
                         "answer": answer,
+                        "token_usage": self.llm.get_usage(),
                     }
                 )
 
@@ -134,6 +144,7 @@ class GroupManager:
                         "CCoT_Agent": results["ccot_answer"],
                         "DDCoT_Agent": results["ddcot_answer"],
                     },
+                    "token_usage": self.llm.get_usage(),
                 }
             )
 

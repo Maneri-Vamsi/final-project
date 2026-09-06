@@ -45,7 +45,7 @@ AGENTS_PER_GROUP=3
 MAX_TOKENS=2048
 ```
 
-The app now accepts `GROQ_API_KEY`, `OPENAI_API_KEY`, or `OPENROUTER_API_KEY`. If no key is set, it can still run in mock mode when `USE_MOCK_LLM` is `true`.
+The app now accepts `EXPERIENTIALLABS_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY`. If no key is set, it can still run in mock mode when `USE_MOCK_LLM` is `true`.
 
 ## Install Dependencies
 
