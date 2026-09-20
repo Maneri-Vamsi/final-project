@@ -1,13 +1,16 @@
 import json
 import threading
+import time
 from typing import Optional
 
 from config.config import GDMADSettings
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI, APIError, RateLimitError
 except ImportError:
     OpenAI = None  # OpenAI SDK is optional when using mock mode
+    APIError = Exception
+    RateLimitError = Exception
 
 
 class LLMClient:
@@ -56,7 +59,22 @@ class LLMClient:
             "max_tokens": max_tokens if max_tokens is not None else self.settings.max_tokens,
         }
 
-        response = self.client.chat.completions.create(**params)
+        response = None
+        max_retries = 5
+        backoff = 2.0
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(**params)
+                break
+            except RateLimitError as e:
+                if attempt == max_retries - 1:
+                    raise e
+                time.sleep(backoff)
+                backoff *= 2
+            except APIError as e:
+                if attempt == max_retries - 1:
+                    raise e
+                time.sleep(backoff)
 
         prompt_tokens = 0
         completion_tokens = 0

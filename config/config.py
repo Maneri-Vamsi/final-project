@@ -27,11 +27,11 @@ class GDMADSettings(BaseSettings):
     @property
     def api_key(self) -> str:
         return (
-            self.cerebras_api_key.strip()
+            self.groq_api_key.strip()
+            or self.cerebras_api_key.strip()
             or self.experientiallabs_api_key.strip()
             or self.openai_api_key.strip()
             or self.openrouter_api_key.strip()
-            or self.groq_api_key.strip()
         )
 
     @property
