@@ -11,6 +11,12 @@ class DDCoTAgent:
         self.llm = llm
         self.prompt_path = prompt_path or Path("prompts/ddcot_prompt.txt")
         self.prompt_template = self._load_prompt()
+        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "api_calls": 0}
+        self.last_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def reset_usage(self):
+        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "api_calls": 0}
+        self.last_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def _load_prompt(self) -> PromptTemplate:
         template = Path(self.prompt_path).read_text()
@@ -23,5 +29,10 @@ class DDCoTAgent:
             context=context_text or "None",
             sub_question_answers=extra_info or ""
         )
-        response = self.llm.generate(prompt)
-        return response
+        content, usage = self.llm.generate_with_usage(prompt)
+        self.last_token_usage = usage
+        self.token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+        self.token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+        self.token_usage["total_tokens"] += usage.get("total_tokens", 0)
+        self.token_usage["api_calls"] += 1
+        return content

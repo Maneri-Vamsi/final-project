@@ -53,6 +53,18 @@ class GroupManager:
             "group_answer": group_answer,
         }
 
+    def reset_agents_usage(self):
+        self.io_agent.reset_usage()
+        self.ccot_agent.reset_usage()
+        self.ddcot_agent.reset_usage()
+
+    def get_agents_usage(self) -> Dict[str, dict]:
+        return {
+            "IO_Agent": dict(self.io_agent.token_usage),
+            "CCoT_Agent": dict(self.ccot_agent.token_usage),
+            "DDCoT_Agent": dict(self.ddcot_agent.token_usage),
+        }
+
     def run_round_with_trace(
         self,
         question: str,
@@ -75,15 +87,17 @@ class GroupManager:
                 )
 
         agents = [
-            ("IO_Agent", "io_answer", lambda: self.io_agent.run(question, round_number, context_text)),
+            ("IO_Agent", "io_answer", self.io_agent, lambda: self.io_agent.run(question, round_number, context_text)),
             (
                 "CCoT_Agent",
                 "ccot_answer",
-                lambda io_answer=None: self.ccot_agent.run(question, round_number, context_text, results["io_answer"]),
+                self.ccot_agent,
+                lambda: self.ccot_agent.run(question, round_number, context_text, results["io_answer"]),
             ),
             (
                 "DDCoT_Agent",
                 "ddcot_answer",
+                self.ddcot_agent,
                 lambda: self.ddcot_agent.run(
                     question,
                     round_number,
@@ -95,7 +109,7 @@ class GroupManager:
 
         results: Dict[str, str] = {}
 
-        for agent_name, result_key, runner in agents:
+        for agent_name, result_key, agent_obj, runner in agents:
             if emit:
                 emit(
                     {
@@ -104,6 +118,7 @@ class GroupManager:
                         "round_number": round_number,
                         "agent_name": agent_name,
                         "token_usage": self.llm.get_usage(),
+                        "agent_token_usage": dict(agent_obj.token_usage),
                     }
                 )
 
@@ -120,6 +135,8 @@ class GroupManager:
                         "agent_name": agent_name,
                         "answer": answer,
                         "token_usage": self.llm.get_usage(),
+                        "agent_token_usage": dict(agent_obj.token_usage),
+                        "agent_last_token_usage": dict(agent_obj.last_token_usage),
                     }
                 )
 
@@ -144,6 +161,7 @@ class GroupManager:
                         "CCoT_Agent": results["ccot_answer"],
                         "DDCoT_Agent": results["ddcot_answer"],
                     },
+                    "agents_token_usage": self.get_agents_usage(),
                     "token_usage": self.llm.get_usage(),
                 }
             )

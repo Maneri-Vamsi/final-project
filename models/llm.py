@@ -37,12 +37,17 @@ class LLMClient:
             )
             self.enabled = True
 
-    def generate(self, prompt: str, temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
+    def generate_with_usage(
+        self, prompt: str, temperature: Optional[float] = None, max_tokens: Optional[int] = None
+    ) -> tuple[str, dict]:
         if not self.enabled:
-            return "No API key found and mock LLM is disabled. Set USE_MOCK_LLM=true or provide an API key."
+            return (
+                "No API key found and mock LLM is disabled. Set USE_MOCK_LLM=true or provide an API key.",
+                {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            )
 
         if self.use_mock:
-            return self._mock_generate(prompt)
+            return self._mock_generate_with_usage(prompt)
 
         params = {
             "model": self.model_name,
@@ -53,15 +58,33 @@ class LLMClient:
 
         response = self.client.chat.completions.create(**params)
 
-        # Track token usage (thread-safe)
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        if response.usage:
+            prompt_tokens = response.usage.prompt_tokens or 0
+            completion_tokens = response.usage.completion_tokens or 0
+            total_tokens = response.usage.total_tokens or (prompt_tokens + completion_tokens)
+
+        # Track global token usage (thread-safe)
         with self._lock:
-            if response.usage:
-                self.prompt_tokens += response.usage.prompt_tokens or 0
-                self.completion_tokens += response.usage.completion_tokens or 0
-                self.total_tokens += response.usage.total_tokens or 0
+            self.prompt_tokens += prompt_tokens
+            self.completion_tokens += completion_tokens
+            self.total_tokens += total_tokens
             self.api_calls += 1
 
-        return response.choices[0].message.content.strip()
+        call_usage = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
+
+        content = response.choices[0].message.content.strip()
+        return content, call_usage
+
+    def generate(self, prompt: str, temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
+        content, _ = self.generate_with_usage(prompt, temperature, max_tokens)
+        return content
 
     def get_usage(self) -> dict:
         """Return current token usage stats (thread-safe)."""
@@ -81,11 +104,7 @@ class LLMClient:
             self.total_tokens = 0
             self.api_calls = 0
 
-    def _mock_generate(self, prompt: str) -> str:
-        with self._lock:
-            self.api_calls += 1
-            # Estimate mock token usage
-            self.prompt_tokens += len(prompt.split()) * 2
+    def _mock_generate_with_usage(self, prompt: str) -> tuple[str, dict]:
         mock_response = ""
 
         if "Group answers" in prompt or "Group answers:" in prompt:
@@ -112,7 +131,23 @@ class LLMClient:
         else:
             mock_response = "Mock answer: " + prompt.strip().replace("\n", " ")[:250]
 
+        prompt_tokens = len(prompt.split()) * 2
+        completion_tokens = len(mock_response.split()) * 2
+        total_tokens = prompt_tokens + completion_tokens
+
         with self._lock:
-            self.completion_tokens += len(mock_response.split()) * 2
-            self.total_tokens = self.prompt_tokens + self.completion_tokens
-        return mock_response
+            self.api_calls += 1
+            self.prompt_tokens += prompt_tokens
+            self.completion_tokens += completion_tokens
+            self.total_tokens += total_tokens
+
+        call_usage = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
+        return mock_response, call_usage
+
+    def _mock_generate(self, prompt: str) -> str:
+        content, _ = self._mock_generate_with_usage(prompt)
+        return content

@@ -69,9 +69,46 @@ const state = {
     // Track per-group, per-agent state for the LATEST round
     groupAgents: { 1: {}, 2: {} },
     groupSynthesis: { 1: "", 2: "" },
+
+    // Individual token tracking per agent across rounds
+    agentTokens: {
+        "1_IO_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "1_CCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "1_DDCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "2_IO_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "2_CCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "2_DDCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    },
 };
 
 /* ── Helpers ── */
+function setProcessing(active) {
+    if (!el.spinnerWrap) return;
+    el.spinnerWrap.hidden = !active;
+    el.spinnerWrap.style.display = active ? "inline-flex" : "none";
+}
+
+// Ensure processing spinner is hidden on initial load
+setProcessing(false);
+
+function updateAgentBreakdown() {
+    const map = {
+        "1_IO_Agent": "tok-g1-io",
+        "1_CCoT_Agent": "tok-g1-ccot",
+        "1_DDCoT_Agent": "tok-g1-ddcot",
+        "2_IO_Agent": "tok-g2-io",
+        "2_CCoT_Agent": "tok-g2-ccot",
+        "2_DDCoT_Agent": "tok-g2-ddcot",
+    };
+    for (const [key, id] of Object.entries(map)) {
+        const itemEl = $(id);
+        if (itemEl) {
+            const val = state.agentTokens[key]?.total_tokens || 0;
+            itemEl.textContent = `${val.toLocaleString()} tok`;
+        }
+    }
+}
+
 function escapeHtml(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -166,11 +203,29 @@ function renderGroupAgents(groupIndex) {
                 : truncate(data.answer, 140)
             : "Waiting for input...";
 
+        const tokKey = `${groupIndex}_${def.key}`;
+        const tokData = state.agentTokens[tokKey] || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        const totalToks = tokData.total_tokens || 0;
+        const promptToks = tokData.prompt_tokens || 0;
+        const compToks = tokData.completion_tokens || 0;
+
+        let badgeHtml = "";
+        if (data?.status === "running") {
+            badgeHtml = `<span class="agent-token-badge running-pulse" title="Reasoning in progress..."><span class="pulse-dot"></span>${totalToks > 0 ? totalToks.toLocaleString() + ' tok' : 'Active'}</span>`;
+        } else if (totalToks > 0) {
+            badgeHtml = `<span class="agent-token-badge has-tokens" title="Prompt: ${promptToks.toLocaleString()} | Completion: ${compToks.toLocaleString()}">${totalToks.toLocaleString()} tokens</span>`;
+        } else {
+            badgeHtml = `<span class="agent-token-badge" title="Token counter">0 tokens</span>`;
+        }
+
         return `
             <div class="agent-slot ${statusCls}">
                 <span class="agent-icon ${def.icon}">${def.label}</span>
                 <div class="agent-body">
-                    <strong>${def.name}</strong>
+                    <div class="agent-header">
+                        <strong>${def.name}</strong>
+                        ${badgeHtml}
+                    </div>
                     <p>${escapeHtml(content)}</p>
                 </div>
             </div>
@@ -249,6 +304,15 @@ function resetState(clearQuestion = false) {
     state.rounds = new Map();
     state.groupAgents = { 1: {}, 2: {} };
     state.groupSynthesis = { 1: "", 2: "" };
+    state.agentTokens = {
+        "1_IO_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "1_CCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "1_DDCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "2_IO_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "2_CCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        "2_DDCoT_Agent": { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+    updateAgentBreakdown();
 
     clearInterval(state.timerId);
     state.timerId = null;
@@ -257,7 +321,7 @@ function resetState(clearQuestion = false) {
 
     el.runBtn.disabled = false;
     el.clearBtn.disabled = false;
-    el.spinnerWrap.hidden = true;
+    setProcessing(false);
     el.navStatus.textContent = "Idle";
     el.elapsedTime.textContent = "00:00.0";
     el.totalTokens.textContent = "0 tokens";
@@ -297,7 +361,7 @@ function beginRun() {
     state.running = true;
     state.startedAt = Date.now();
     el.runBtn.disabled = true;
-    el.spinnerWrap.hidden = false;
+    setProcessing(true);
     el.navStatus.textContent = "Running";
     el.navStatus.closest(".stat-chip").querySelector("svg circle")?.setAttribute("fill", "#68d391");
     state.timerId = setInterval(updateTimer, 100);
@@ -330,7 +394,7 @@ function handleEvent(event) {
 
         case "round_started":
             setStage("Generating Independent Agent Reasoning");
-            // Clear agent state for new round
+            // Clear agent answer state for new round while preserving token usage
             state.groupAgents = { 1: {}, 2: {} };
             state.groupSynthesis = { 1: "", 2: "" };
             [1, 2].forEach((g) => {
@@ -346,6 +410,10 @@ function handleEvent(event) {
         case "agent_started":
             state.groupAgents[event.group_index] = state.groupAgents[event.group_index] || {};
             state.groupAgents[event.group_index][event.agent_name] = { status: "running", answer: "" };
+            if (event.agent_token_usage) {
+                state.agentTokens[`${event.group_index}_${event.agent_name}`] = event.agent_token_usage;
+                updateAgentBreakdown();
+            }
             renderGroupAgents(event.group_index);
             setGroupStatus(event.group_index, "Reasoning");
             log(`G${event.group_index} ${event.agent_name} started`, "log-agent");
@@ -355,8 +423,14 @@ function handleEvent(event) {
             state.groupAgents[event.group_index] = state.groupAgents[event.group_index] || {};
             state.groupAgents[event.group_index][event.agent_name] = { status: "completed", answer: event.answer };
             state.completedAgents++;
+            if (event.agent_token_usage) {
+                state.agentTokens[`${event.group_index}_${event.agent_name}`] = event.agent_token_usage;
+                updateAgentBreakdown();
+            }
             renderGroupAgents(event.group_index);
-            log(`G${event.group_index} ${event.agent_name} completed`, "log-success");
+            const callToks = event.agent_last_token_usage?.total_tokens || event.agent_token_usage?.total_tokens;
+            const tokInfo = callToks !== undefined ? ` (${callToks.toLocaleString()} tokens)` : "";
+            log(`G${event.group_index} ${event.agent_name} completed${tokInfo}`, "log-success");
             break;
 
         case "leader_context_applied":
@@ -366,6 +440,12 @@ function handleEvent(event) {
         case "group_round_completed":
             setStage("Group Debate");
             state.groupSynthesis[event.group_index] = event.group_answer || "";
+            if (event.agents_token_usage) {
+                for (const [agentName, usage] of Object.entries(event.agents_token_usage)) {
+                    state.agentTokens[`${event.group_index}_${agentName}`] = usage;
+                }
+                updateAgentBreakdown();
+            }
             renderGroupSynthesis(event.group_index);
             setGroupStatus(event.group_index, "Debated");
             log(`G${event.group_index} debate synthesis complete`, "log-success");
@@ -407,7 +487,7 @@ function handleEvent(event) {
             updateProgress();
             el.navStatus.textContent = "Completed";
             el.runBtn.disabled = false;
-            el.spinnerWrap.hidden = true;
+            setProcessing(false);
             clearInterval(state.timerId);
             state.timerId = null;
 
@@ -431,7 +511,7 @@ function handleEvent(event) {
         case "error":
             el.navStatus.textContent = "Error";
             el.runBtn.disabled = false;
-            el.spinnerWrap.hidden = true;
+            setProcessing(false);
             clearInterval(state.timerId);
             state.timerId = null;
             log(`Error: ${event.message || "Unknown error"}`, "log-error");
@@ -471,7 +551,13 @@ async function streamDebate(question) {
 /* ── Run Debate ── */
 async function runDebate() {
     const question = el.questionInput.value.trim();
-    if (!question || state.running) return;
+    if (!question) {
+        el.questionInput.focus();
+        el.questionInput.classList.add("input-shake");
+        setTimeout(() => el.questionInput.classList.remove("input-shake"), 400);
+        return;
+    }
+    if (state.running) return;
 
     resetState(false);
     beginRun();
@@ -482,12 +568,339 @@ async function runDebate() {
         handleEvent({ type: "error", message: err.message });
     } finally {
         state.running = false;
+        el.runBtn.disabled = false;
+        setProcessing(false);
     }
 }
 
 /* ── Event Listeners ── */
-el.runBtn.addEventListener("click", runDebate);
-el.clearBtn.addEventListener("click", () => resetState(true));
-el.questionInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) runDebate();
+// Click with cursor on "Run Debate" button
+el.runBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    runDebate();
 });
+
+el.clearBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    resetState(true);
+});
+
+// Trigger debate on pressing Enter key (Shift+Enter allows multiline input)
+el.questionInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        runDebate();
+    }
+});
+
+/* ── Theme Switcher (Dark / Light Mode) ── */
+const themeToggleBtn = $("theme-toggle");
+const themeLabel = $("theme-label");
+
+function applyTheme(theme) {
+    if (theme === "light") {
+        document.documentElement.setAttribute("data-theme", "light");
+        if (themeLabel) themeLabel.textContent = "Dark";
+        localStorage.setItem("g_dmad_theme", "light");
+    } else {
+        document.documentElement.removeAttribute("data-theme");
+        if (themeLabel) themeLabel.textContent = "Light";
+        localStorage.setItem("g_dmad_theme", "dark");
+    }
+}
+
+// Initialize theme from localStorage or system preference
+const savedTheme = localStorage.getItem("g_dmad_theme") || "dark";
+applyTheme(savedTheme);
+
+let isThemeTransitioning = false;
+
+function toggleTheme(e) {
+    if (isThemeTransitioning) return;
+
+    const currentTheme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    const newTheme = currentTheme === "light" ? "dark" : "light";
+    const toDark = newTheme === "dark";
+
+    // Calculate exact center coordinates of the theme toggle button
+    const rect = themeToggleBtn.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+
+    const endRadius = Math.ceil(
+        Math.hypot(
+            Math.max(x, window.innerWidth - x),
+            Math.max(y, window.innerHeight - y)
+        )
+    ) + 30;
+
+    // Bind CSS variables for native keyframes on root
+    document.documentElement.style.setProperty("--theme-btn-x", `${x}px`);
+    document.documentElement.style.setProperty("--theme-btn-y", `${y}px`);
+    document.documentElement.style.setProperty("--theme-end-radius", `${endRadius}px`);
+
+    const transitionAttr = toDark ? "to-dark" : "to-light";
+    document.documentElement.setAttribute("data-theme-transition", transitionAttr);
+
+    // Modern View Transitions API with circular clip-path expansion / collapse
+    if (document.startViewTransition) {
+        isThemeTransitioning = true;
+
+        const transition = document.startViewTransition(() => {
+            applyTheme(newTheme);
+        });
+
+        transition.ready.then(() => {
+            const animTarget = toDark ? "::view-transition-old(root)" : "::view-transition-new(root)";
+            const keyframes = toDark
+                ? [
+                    { clipPath: `circle(${endRadius}px at ${x}px ${y}px)` },
+                    { clipPath: `circle(0px at ${x}px ${y}px)` }
+                ]
+                : [
+                    { clipPath: `circle(0px at ${x}px ${y}px)` },
+                    { clipPath: `circle(${endRadius}px at ${x}px ${y}px)` }
+                ];
+
+            const animation = document.documentElement.animate(keyframes, {
+                duration: 650,
+                easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+                pseudoElement: animTarget,
+                fill: "forwards"
+            });
+
+            const cleanUp = () => {
+                document.documentElement.removeAttribute("data-theme-transition");
+                isThemeTransitioning = false;
+            };
+
+            animation.onfinish = cleanUp;
+            animation.oncancel = cleanUp;
+        }).catch(() => {
+            document.documentElement.removeAttribute("data-theme-transition");
+            isThemeTransitioning = false;
+        });
+
+        transition.finished.finally(() => {
+            document.documentElement.removeAttribute("data-theme-transition");
+            isThemeTransitioning = false;
+        });
+    } else {
+        // High performance fallback for browsers without View Transitions
+        isThemeTransitioning = true;
+        const ripple = document.createElement("div");
+        ripple.className = "theme-ripple-fallback";
+        const size = endRadius * 2;
+        ripple.style.width = `${size}px`;
+        ripple.style.height = `${size}px`;
+        ripple.style.left = `${x - endRadius}px`;
+        ripple.style.top = `${y - endRadius}px`;
+
+        if (toDark) {
+            // Dark ends in button: light overlay contracts smoothly into button
+            ripple.style.backgroundColor = "#f8fafc";
+            ripple.style.transform = "scale(1)";
+            ripple.style.opacity = "1";
+            applyTheme("dark");
+            document.body.appendChild(ripple);
+
+            requestAnimationFrame(() => {
+                ripple.style.transform = "scale(0)";
+                setTimeout(() => {
+                    ripple.remove();
+                    document.documentElement.removeAttribute("data-theme-transition");
+                    isThemeTransitioning = false;
+                }, 600);
+            });
+        } else {
+            // Light starts from button: light overlay expands smoothly from button
+            ripple.style.backgroundColor = "#f8fafc";
+            ripple.style.transform = "scale(0)";
+            ripple.style.opacity = "1";
+            document.body.appendChild(ripple);
+
+            requestAnimationFrame(() => {
+                ripple.style.transform = "scale(1)";
+                setTimeout(() => {
+                    applyTheme("light");
+                    ripple.style.opacity = "0";
+                    setTimeout(() => {
+                        ripple.remove();
+                        document.documentElement.removeAttribute("data-theme-transition");
+                        isThemeTransitioning = false;
+                    }, 350);
+                }, 550);
+            });
+        }
+    }
+}
+
+if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", toggleTheme);
+}
+
+/* ── Draggable Splitter Divider ── */
+function initSplitter() {
+    const splitter = $("sidebar-splitter");
+    const layout = document.querySelector(".layout");
+    const sidebar = document.querySelector(".sidebar");
+    const sidebarRight = document.querySelector(".sidebar-right");
+
+    if (!splitter || !layout || !sidebar) return;
+
+    const MIN_SIDEBAR_WIDTH = 220; // Question textarea & pipeline remain fully readable
+    const MIN_MAIN_WIDTH = 340;    // Group panels & synthesis remain fully readable
+    const MAX_SIDEBAR_CAP = 750;   // Prevent sidebar from overtaking on wide screens
+    const DEFAULT_SIDEBAR_WIDTH = 320;
+
+    let isDragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    function getBounds() {
+        const layoutRect = layout.getBoundingClientRect();
+        const rightWidth = sidebarRight ? sidebarRight.offsetWidth : 280;
+        const splitterWidth = splitter.offsetWidth || 6;
+        const maxAllowed = Math.min(
+            MAX_SIDEBAR_CAP,
+            Math.max(MIN_SIDEBAR_WIDTH, layoutRect.width - rightWidth - splitterWidth - MIN_MAIN_WIDTH)
+        );
+        return { min: MIN_SIDEBAR_WIDTH, max: maxAllowed };
+    }
+
+    function setSidebarWidth(width, persist = true) {
+        const bounds = getBounds();
+        const clamped = Math.round(Math.max(bounds.min, Math.min(width, bounds.max)));
+        layout.style.setProperty("--sidebar-width", `${clamped}px`);
+        splitter.setAttribute("aria-valuenow", clamped);
+        splitter.setAttribute("aria-valuemin", bounds.min);
+        splitter.setAttribute("aria-valuemax", bounds.max);
+        if (persist) {
+            localStorage.setItem("g_dmad_sidebar_width", clamped);
+        }
+        return clamped;
+    }
+
+    // Restore saved width if available
+    const saved = localStorage.getItem("g_dmad_sidebar_width");
+    if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= MIN_SIDEBAR_WIDTH) {
+            setSidebarWidth(parsed, false);
+        }
+    } else {
+        setSidebarWidth(DEFAULT_SIDEBAR_WIDTH, false);
+    }
+    const bounds = getBounds();
+    splitter.setAttribute("aria-valuenow", DEFAULT_SIDEBAR_WIDTH);
+    splitter.setAttribute("aria-valuemin", bounds.min);
+    splitter.setAttribute("aria-valuemax", bounds.max);
+
+    function onDragStart(clientX, pointerId) {
+        isDragging = true;
+        startX = clientX;
+        startWidth = sidebar.getBoundingClientRect().width;
+
+        splitter.classList.add("is-dragging");
+        layout.classList.add("is-resizing");
+        document.body.style.cursor = "col-resize";
+
+        if (pointerId !== undefined && splitter.setPointerCapture) {
+            try {
+                splitter.setPointerCapture(pointerId);
+            } catch (_) {}
+        }
+    }
+
+    function onDragMove(clientX) {
+        if (!isDragging) return;
+        const deltaX = clientX - startX;
+        setSidebarWidth(startWidth + deltaX, false);
+    }
+
+    function onDragEnd(pointerId) {
+        if (!isDragging) return;
+        isDragging = false;
+
+        splitter.classList.remove("is-dragging");
+        layout.classList.remove("is-resizing");
+        document.body.style.cursor = "";
+
+        if (pointerId !== undefined && splitter.releasePointerCapture) {
+            try {
+                splitter.releasePointerCapture(pointerId);
+            } catch (_) {}
+        }
+
+        // Persist final width
+        const currentWidth = sidebar.getBoundingClientRect().width;
+        setSidebarWidth(currentWidth, true);
+    }
+
+    // Pointer Events
+    splitter.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return; // Only primary button
+        e.preventDefault();
+        onDragStart(e.clientX, e.pointerId);
+    });
+
+    splitter.addEventListener("pointermove", (e) => {
+        if (isDragging) {
+            e.preventDefault();
+            onDragMove(e.clientX);
+        }
+    });
+
+    splitter.addEventListener("pointerup", (e) => {
+        onDragEnd(e.pointerId);
+    });
+
+    splitter.addEventListener("pointercancel", (e) => {
+        onDragEnd(e.pointerId);
+    });
+
+    // Window safety listeners
+    window.addEventListener("pointermove", (e) => {
+        if (isDragging) onDragMove(e.clientX);
+    });
+
+    window.addEventListener("pointerup", (e) => {
+        if (isDragging) onDragEnd(e.pointerId);
+    });
+
+    // Double-click to reset to default width
+    splitter.addEventListener("dblclick", () => {
+        setSidebarWidth(DEFAULT_SIDEBAR_WIDTH, true);
+    });
+
+    // Keyboard accessibility
+    splitter.addEventListener("keydown", (e) => {
+        const step = e.shiftKey ? 40 : 10;
+        const currentWidth = sidebar.getBoundingClientRect().width;
+        if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            setSidebarWidth(currentWidth - step, true);
+        } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            setSidebarWidth(currentWidth + step, true);
+        } else if (e.key === "Home") {
+            e.preventDefault();
+            setSidebarWidth(MIN_SIDEBAR_WIDTH, true);
+        } else if (e.key === "End") {
+            e.preventDefault();
+            setSidebarWidth(MAX_SIDEBAR_CAP, true);
+        }
+    });
+
+    // Window resize handler
+    window.addEventListener("resize", () => {
+        if (!isDragging) {
+            const currentWidth = sidebar.getBoundingClientRect().width;
+            setSidebarWidth(currentWidth, false);
+        }
+    });
+}
+
+initSplitter();
+
+

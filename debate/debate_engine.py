@@ -67,6 +67,8 @@ class DebateEngine:
         ]
 
         self.llm.reset_usage()
+        for manager in self.group_managers:
+            manager.reset_agents_usage()
 
         if emit:
             emit({"type": "question_received", "question": question, "token_usage": self.llm.get_usage()})

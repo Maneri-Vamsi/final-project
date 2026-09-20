@@ -7,6 +7,7 @@ class GDMADSettings(BaseSettings):
     openai_api_key: str = Field("", env="OPENAI_API_KEY")
     openrouter_api_key: str = Field("", env="OPENROUTER_API_KEY")
     groq_api_key: str = Field("", env="GROQ_API_KEY")
+    cerebras_api_key: str = Field("", env="CEREBRAS_API_KEY")
     experientiallabs_api_key: str = Field("", env="EXPERIENTIALLABS_API_KEY")
     use_mock_llm: bool = Field(True, env="USE_MOCK_LLM")
     model_name: str = Field("inclusionai/ling-3.0-flash:free", env="MODEL_NAME")
@@ -26,7 +27,8 @@ class GDMADSettings(BaseSettings):
     @property
     def api_key(self) -> str:
         return (
-            self.experientiallabs_api_key.strip()
+            self.cerebras_api_key.strip()
+            or self.experientiallabs_api_key.strip()
             or self.openai_api_key.strip()
             or self.openrouter_api_key.strip()
             or self.groq_api_key.strip()
